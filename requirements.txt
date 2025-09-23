@@ -1,0 +1,39 @@
+# Core dependencies
+langchain
+langchain-openai
+langchain-community
+langchain-core
+langgraph
+langsmith
+
+# Document processing
+docling
+pypdf2
+pymupdf
+
+# Vector store and embeddings
+pinecone
+openai
+
+# Database
+psycopg2-binary
+sqlalchemy
+alembic
+
+# API and web framework
+fastapi
+uvicorn
+python-multipart
+
+# Utilities
+python-dotenv
+pydantic
+pydantic-settings
+requests
+numpy
+pandas
+
+# Development and testing
+pytest
+pytest-asyncio
+black
