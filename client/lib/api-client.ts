@@ -155,7 +155,7 @@ export class APIClient {
         if (error.response) {
           throw new APIError(
             error.response.status,
-            error.response.data?.message || error.message,
+            (error.response.data as any)?.message || error.message,
             error.response.data
           );
         }

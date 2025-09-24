@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { FileText, MessageSquare, Brain, Activity, Upload } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 const navItems = [
   {
@@ -37,13 +38,13 @@ export default function Navigation() {
   const pathname = usePathname();
 
   return (
-    <nav className="bg-white shadow-sm border-b">
+    <nav className="bg-background shadow-sm border-b">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
             <Link href="/" className="flex items-center space-x-2">
-              <FileText className="h-8 w-8 text-blue-600" />
-              <span className="text-xl font-bold text-gray-900">
+              <FileText className="h-8 w-8 text-primary" />
+              <span className="text-xl font-bold">
                 Financial Document AI
               </span>
             </Link>
@@ -56,19 +57,17 @@ export default function Navigation() {
                 (item.href !== '/' && pathname.startsWith(item.href));
               
               return (
-                <Link
+                <Button
                   key={item.href}
-                  href={item.href}
-                  className={cn(
-                    'flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
-                    isActive
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-gray-900 hover:text-gray-800 hover:bg-gray-50'
-                  )}
+                  variant={isActive ? "secondary" : "ghost"}
+                  size="sm"
+                  asChild
                 >
-                  <Icon className="h-4 w-4" />
-                  <span>{item.title}</span>
-                </Link>
+                  <Link href={item.href}>
+                    <Icon className="h-4 w-4 mr-2" />
+                    <span>{item.title}</span>
+                  </Link>
+                </Button>
               );
             })}
           </div>

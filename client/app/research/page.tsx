@@ -1,16 +1,24 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient, Document, ResearchTask } from '@/lib/api-client';
 import { formatRelativeTime } from '@/lib/utils';
 import { Brain, FileText, Loader2, AlertCircle, CheckCircle, Clock, ChevronRight, ChevronDown } from 'lucide-react';
-import { useToast } from '@/components/ui/toast';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
-export default function ResearchPage() {
+function ResearchContent() {
   const searchParams = useSearchParams();
-  const { toast } = useToast();
   const preselectedDocumentId = searchParams.get('documentId');
   
   const [selectedDocument, setSelectedDocument] = useState<string>(preselectedDocumentId || '');
@@ -33,8 +41,7 @@ export default function ResearchPage() {
     mutationFn: ({ documentId, topic, customQuery }: { documentId: string; topic: string; customQuery?: string }) =>
       apiClient.startResearch(documentId, topic, customQuery),
     onSuccess: (data) => {
-      toast({
-        title: 'Research started',
+      toast.success('Research started', {
         description: `Research task "${data.topic}" has been initiated.`,
       });
       refetchTasks();
@@ -43,10 +50,8 @@ export default function ResearchPage() {
       setCustomQuery('');
     },
     onError: (error: any) => {
-      toast({
-        title: 'Failed to start research',
+      toast.error('Failed to start research', {
         description: error.message || 'Please try again.',
-        variant: 'destructive',
       });
     },
   });
@@ -91,109 +96,111 @@ export default function ResearchPage() {
   return (
     <div className="max-w-6xl mx-auto">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Deep Research</h1>
-        <p className="text-gray-700">Generate comprehensive research and analysis from your documents</p>
+        <h1 className="text-3xl font-bold mb-2">Deep Research</h1>
+        <p className="text-muted-foreground">Generate comprehensive research and analysis from your documents</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Research Form */}
         <div className="lg:col-span-1">
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">New Research Task</h2>
-            
-            <form onSubmit={handleStartResearch} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Select Document
-                </label>
-                <select
-                  value={selectedDocument}
-                  onChange={(e) => setSelectedDocument(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
+          <Card>
+            <CardHeader>
+              <CardTitle>New Research Task</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleStartResearch} className="space-y-4">
+                <div>
+                  <Label>Select Document</Label>
+                  <Select
+                    value={selectedDocument}
+                    onValueChange={setSelectedDocument}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a document..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {processedDocuments.map((doc) => (
+                        <SelectItem key={doc.id} value={doc.id}>
+                          {doc.original_filename || doc.filename}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Research Topic</Label>
+                  <Input
+                    type="text"
+                    value={topic}
+                    onChange={(e) => setTopic(e.target.value)}
+                    placeholder="e.g., Key Investment Highlights"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <Label>Custom Query (Optional)</Label>
+                  <Textarea
+                    value={customQuery}
+                    onChange={(e) => setCustomQuery(e.target.value)}
+                    placeholder="Add specific questions or areas to focus on..."
+                    rows={3}
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={!selectedDocument || !topic.trim() || startResearchMutation.isPending}
+                  className="w-full"
                 >
-                  <option value="">Choose a document...</option>
-                  {processedDocuments.map((doc) => (
-                    <option key={doc.id} value={doc.id}>
-                      {doc.original_filename || doc.filename}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                  {startResearchMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Starting Research...
+                    </>
+                  ) : (
+                    <>
+                      <Brain className="h-4 w-4 mr-2" />
+                      Start Research
+                    </>
+                  )}
+                </Button>
+              </form>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Research Topic
-                </label>
-                <input
-                  type="text"
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  placeholder="e.g., Key Investment Highlights"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Custom Query (Optional)
-                </label>
-                <textarea
-                  value={customQuery}
-                  onChange={(e) => setCustomQuery(e.target.value)}
-                  placeholder="Add specific questions or areas to focus on..."
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={!selectedDocument || !topic.trim() || startResearchMutation.isPending}
-                className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
-              >
-                {startResearchMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Starting Research...</span>
-                  </>
-                ) : (
-                  <>
-                    <Brain className="h-4 w-4" />
-                    <span>Start Research</span>
-                  </>
-                )}
-              </button>
-            </form>
-
-            {processedDocuments.length === 0 && (
-              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                <p className="text-sm text-amber-800">
-                  No processed documents available. Please upload and wait for documents to be fully processed before starting research.
-                </p>
-              </div>
-            )}
-          </div>
+              {processedDocuments.length === 0 && (
+                <Alert className="mt-4">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    No processed documents available. Please upload and wait for documents to be fully processed before starting research.
+                  </AlertDescription>
+                </Alert>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Research Tasks */}
         <div className="lg:col-span-2">
           {!selectedDocument ? (
-            <div className="bg-gray-50 rounded-lg p-12 text-center">
-              <Brain className="h-12 w-12 text-gray-700 mx-auto mb-4" />
-              <p className="text-gray-700">Select a document to view research tasks</p>
-            </div>
+            <Card className="h-full">
+              <CardContent className="flex items-center justify-center h-full min-h-[400px]">
+                <div className="text-center">
+                  <Brain className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">Select a document to view research tasks</p>
+                </div>
+              </CardContent>
+            </Card>
           ) : researchTasks && researchTasks.length > 0 ? (
             <div className="space-y-4">
               {researchTasks.map((task) => (
-                <div key={task.id} className="bg-white rounded-lg shadow-sm border overflow-hidden">
-                  <div className="p-6">
+                <Card key={task.id}>
+                  <CardContent className="p-6">
                     <div className="flex items-start justify-between mb-4">
                       <div>
-                        <h3 className="text-lg font-semibold text-gray-900">{task.topic}</h3>
+                        <h3 className="text-lg font-semibold">{task.topic}</h3>
                         {task.custom_query && (
-                          <p className="text-sm text-gray-700 mt-1">{task.custom_query}</p>
+                          <p className="text-sm text-muted-foreground mt-1">{task.custom_query}</p>
                         )}
                       </div>
                       <div className="flex items-center space-x-2">
@@ -201,26 +208,26 @@ export default function ResearchPage() {
                           <CheckCircle className="h-5 w-5 text-green-600" />
                         )}
                         {task.status === 'in_progress' && (
-                          <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                          <Loader2 className="h-5 w-5 animate-spin text-primary" />
                         )}
                         {task.status === 'pending' && (
-                          <Clock className="h-5 w-5 text-gray-700" />
+                          <Clock className="h-5 w-5 text-muted-foreground" />
                         )}
                         {task.status === 'failed' && (
-                          <AlertCircle className="h-5 w-5 text-red-600" />
+                          <AlertCircle className="h-5 w-5 text-destructive" />
                         )}
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          task.status === 'completed' ? 'bg-green-100 text-green-800' :
-                          task.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                          task.status === 'pending' ? 'bg-gray-100 text-gray-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
+                        <Badge variant={
+                          task.status === 'completed' ? 'default' :
+                          task.status === 'in_progress' ? 'secondary' :
+                          task.status === 'pending' ? 'outline' :
+                          'destructive'
+                        }>
                           {task.status.replace('_', ' ')}
-                        </span>
+                        </Badge>
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-4 text-sm text-gray-700">
+                    <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                       <span>Created {formatRelativeTime(task.created_at)}</span>
                       {task.processing_time && (
                         <span>• {task.processing_time.toFixed(1)}s processing time</span>
@@ -230,7 +237,7 @@ export default function ResearchPage() {
                     {/* Content Outline */}
                     {task.content_outline && Object.keys(task.content_outline).length > 0 && (
                       <div className="mt-6">
-                        <h4 className="font-medium text-gray-900 mb-3">Content Outline</h4>
+                        <h4 className="font-medium mb-3">Content Outline</h4>
                         <div className="space-y-2">
                           {Object.entries(task.content_outline).map(([key, section]) => {
                             const sectionId = `${task.id}-${key}`;
@@ -238,43 +245,53 @@ export default function ResearchPage() {
                             const findings = task.research_findings?.[key];
 
                             return (
-                              <div key={key} className="border rounded-lg">
-                                <button
-                                  onClick={() => toggleSection(sectionId)}
-                                  className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
-                                >
-                                  <div className="flex items-start text-left">
-                                    <span className="font-medium text-gray-700 mr-2">{key}.</span>
-                                    <div>
-                                      <p className="font-medium text-gray-900">{section.title}</p>
-                                      <p className="text-sm text-gray-700">{section.description}</p>
-                                    </div>
-                                  </div>
-                                  {isExpanded ? (
-                                    <ChevronDown className="h-5 w-5 text-gray-700 flex-shrink-0" />
-                                  ) : (
-                                    <ChevronRight className="h-5 w-5 text-gray-700 flex-shrink-0" />
-                                  )}
-                                </button>
-
-                                {isExpanded && findings && (
-                                  <div className="px-4 pb-4 border-t">
-                                    <div className="pt-4 prose prose-sm max-w-none">
-                                      <p className="text-gray-700">{findings.content}</p>
-                                      {findings.key_points && findings.key_points.length > 0 && (
-                                        <div className="mt-3">
-                                          <p className="font-medium text-gray-900">Key Points:</p>
-                                          <ul className="mt-1 space-y-1">
-                                            {findings.key_points.map((point, idx) => (
-                                              <li key={idx} className="text-gray-700">{point}</li>
-                                            ))}
-                                          </ul>
+                              <Collapsible
+                                key={key}
+                                open={isExpanded}
+                                onOpenChange={() => toggleSection(sectionId)}
+                              >
+                                <Card>
+                                  <CollapsibleTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      className="w-full justify-between p-4 h-auto"
+                                    >
+                                      <div className="flex items-start text-left">
+                                        <span className="font-medium text-muted-foreground mr-2">{key}.</span>
+                                        <div>
+                                          <p className="font-medium">{section.title}</p>
+                                          <p className="text-sm text-muted-foreground">{section.description}</p>
                                         </div>
+                                      </div>
+                                      {isExpanded ? (
+                                        <ChevronDown className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                                      ) : (
+                                        <ChevronRight className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                                       )}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
+                                    </Button>
+                                  </CollapsibleTrigger>
+
+                                  <CollapsibleContent>
+                                    {findings && (
+                                      <CardContent className="pt-0 pb-4">
+                                        <div className="prose prose-sm max-w-none">
+                                          <p className="text-foreground">{findings.content}</p>
+                                          {findings.key_points && findings.key_points.length > 0 && (
+                                            <div className="mt-3">
+                                              <p className="font-medium">Key Points:</p>
+                                              <ul className="mt-1 space-y-1">
+                                                {findings.key_points.map((point, idx) => (
+                                                  <li key={idx}>{point}</li>
+                                                ))}
+                                              </ul>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </CardContent>
+                                    )}
+                                  </CollapsibleContent>
+                                </Card>
+                              </Collapsible>
                             );
                           })}
                         </div>
@@ -284,40 +301,52 @@ export default function ResearchPage() {
                     {/* Sources */}
                     {task.sources_used && task.sources_used.length > 0 && (
                       <div className="mt-6">
-                        <h4 className="font-medium text-gray-900 mb-3">Sources Used</h4>
+                        <h4 className="font-medium mb-3">Sources Used</h4>
                         <div className="space-y-2">
                           {task.sources_used.slice(0, 5).map((source, idx) => (
-                            <div key={idx} className="bg-gray-50 rounded p-3 text-sm">
+                            <div key={idx} className="bg-secondary rounded p-3 text-sm">
                               <div className="flex items-center justify-between mb-1">
-                                <span className="font-medium text-gray-700">Page {source.page}</span>
-                                <span className="text-xs text-gray-700">
-                                  Relevance: {(source.relevance_score * 100).toFixed(0)}%
-                                </span>
+                                <span className="font-medium">Page {source.page}</span>
+                                <Badge variant="outline" className="text-xs">
+                                  {(source.relevance_score * 100).toFixed(0)}% relevance
+                                </Badge>
                               </div>
-                              <p className="text-gray-700 line-clamp-2">{source.content}</p>
+                              <p className="text-muted-foreground line-clamp-2">{source.content}</p>
                             </div>
                           ))}
                           {task.sources_used.length > 5 && (
-                            <p className="text-sm text-gray-700 text-center">
+                            <p className="text-sm text-muted-foreground text-center">
                               and {task.sources_used.length - 5} more sources...
                             </p>
                           )}
                         </div>
                       </div>
                     )}
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
           ) : (
-            <div className="bg-gray-50 rounded-lg p-12 text-center">
-              <Brain className="h-12 w-12 text-gray-700 mx-auto mb-4" />
-              <p className="text-gray-700">No research tasks yet for this document</p>
-              <p className="text-sm text-gray-700 mt-2">Create your first research task using the form</p>
-            </div>
+            <Card className="h-full">
+              <CardContent className="flex items-center justify-center h-full min-h-[400px]">
+                <div className="text-center">
+                  <Brain className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-foreground">No research tasks yet for this document</p>
+                  <p className="text-sm text-muted-foreground mt-2">Create your first research task using the form</p>
+                </div>
+              </CardContent>
+            </Card>
           )}
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ResearchPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+      <ResearchContent />
+    </Suspense>
   );
 }
