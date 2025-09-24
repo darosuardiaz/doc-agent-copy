@@ -129,14 +129,30 @@ class ChatRAGAgent:
             
             logger.info(f"Chat response generated in {response_time:.2f}s")
             
+            # Handle both dict and object responses from langraph
+            if isinstance(final_state, dict):
+                # If langraph returns a dictionary instead of the state object
+                response_msg = final_state.get('response', 'No response generated')
+                sources = final_state.get('sources_used', []) if use_rag else None
+                token_count = final_state.get('response_metadata', {}).get('token_count')
+                chunks_used = len(final_state.get('retrieved_chunks', [])) if use_rag else 0
+                errors = final_state.get('errors') if final_state.get('errors') else None
+            else:
+                # Normal case where langraph returns the state object
+                response_msg = final_state.response
+                sources = final_state.sources_used if use_rag else None
+                token_count = final_state.response_metadata.get('token_count')
+                chunks_used = len(final_state.retrieved_chunks) if use_rag else 0
+                errors = final_state.errors if final_state.errors else None
+            
             return {
-                'message': final_state.response,
+                'message': response_msg,
                 'session_id': session_id,
-                'sources_used': final_state.sources_used if use_rag else None,
+                'sources_used': sources,
                 'response_time': response_time,
-                'token_count': final_state.response_metadata.get('token_count'),
-                'context_chunks_used': len(final_state.retrieved_chunks) if use_rag else 0,
-                'errors': final_state.errors if final_state.errors else None
+                'token_count': token_count,
+                'context_chunks_used': chunks_used,
+                'errors': errors
             }
             
         except Exception as e:

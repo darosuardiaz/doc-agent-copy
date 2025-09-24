@@ -115,14 +115,30 @@ class DeepResearchAgent:
             # Execute the research workflow
             final_state = await self.workflow.ainvoke(initial_state)
             
+            # Handle both dict and object responses from langraph
+            if isinstance(final_state, dict):
+                # If langraph returns a dictionary instead of the state object
+                content_outline = final_state.get('content_outline', {})
+                detailed_sections = final_state.get('detailed_sections', {})
+                sources_used = final_state.get('sources_used', [])
+                research_questions = final_state.get('research_questions', [])
+                errors = final_state.get('errors', [])
+            else:
+                # Normal case where langraph returns the state object
+                content_outline = final_state.content_outline
+                detailed_sections = final_state.detailed_sections
+                sources_used = final_state.sources_used
+                research_questions = final_state.research_questions
+                errors = final_state.errors
+            
             # Update database with results
             await self._update_research_task(
                 task_id,
-                final_state.content_outline,
-                final_state.detailed_sections,
-                final_state.sources_used,
-                "completed" if not final_state.errors else "failed",
-                final_state.errors
+                content_outline,
+                detailed_sections,
+                sources_used,
+                "completed" if not errors else "failed",
+                errors
             )
             
             logger.info(f"Deep research completed for document {document_id}")
@@ -131,12 +147,12 @@ class DeepResearchAgent:
                 'task_id': task_id,
                 'document_id': document_id,
                 'topic': topic,
-                'content_outline': final_state.content_outline,
-                'detailed_sections': final_state.detailed_sections,
-                'sources_used': final_state.sources_used,
-                'research_questions': final_state.research_questions,
-                'status': 'completed' if not final_state.errors else 'failed',
-                'errors': final_state.errors
+                'content_outline': content_outline,
+                'detailed_sections': detailed_sections,
+                'sources_used': sources_used,
+                'research_questions': research_questions,
+                'status': 'completed' if not errors else 'failed',
+                'errors': errors
             }
             
         except Exception as e:
@@ -156,6 +172,11 @@ class DeepResearchAgent:
                 if not document:
                     state.errors.append(f"Document {state.document_id} not found")
                     return state
+                
+                # Extract document attributes within the session scope
+                doc_filename = document.filename
+                doc_page_count = document.page_count or "Unknown"
+                doc_word_count = document.word_count or "Unknown"
             
             # Create analysis prompt
             analysis_prompt = ChatPromptTemplate.from_messages([
@@ -164,9 +185,9 @@ class DeepResearchAgent:
             ])
             
             messages = analysis_prompt.format_messages(
-                filename=document.filename,
-                page_count=document.page_count or "Unknown",
-                word_count=document.word_count or "Unknown",
+                filename=doc_filename,
+                page_count=doc_page_count,
+                word_count=doc_word_count,
                 topic=state.topic,
                 research_query=state.research_query
             )
@@ -179,9 +200,9 @@ class DeepResearchAgent:
                 state.content_outline.update({
                     'topic_analysis': analysis,
                     'document_context': {
-                        'filename': document.filename,
-                        'page_count': document.page_count,
-                        'word_count': document.word_count
+                        'filename': doc_filename,
+                        'page_count': doc_page_count,
+                        'word_count': doc_word_count
                     }
                 })
             except json.JSONDecodeError:

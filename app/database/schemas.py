@@ -122,11 +122,11 @@ class ChatMessage(BaseModel):
     session_id: UUID
     role: str
     content: str
-    token_count: Optional[int]
-    model_used: Optional[str]
-    response_time: Optional[float]
-    retrieved_chunks: Optional[List[Dict[str, Any]]]
-    similarity_scores: Optional[List[float]]
+    token_count: Optional[int] = None
+    model_used: Optional[str] = None
+    response_time: Optional[float] = None
+    retrieved_chunks: Optional[List[Dict[str, Any]]] = None
+    similarity_scores: Optional[List[float]] = None
     created_at: datetime
 
     class Config:
