@@ -1,20 +1,26 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiClient, Document, ChatSession, ChatMessage } from '@/lib/api-client';
 import { formatRelativeTime, formatDate } from '@/lib/utils';
 import { MessageSquare, Send, Loader2, Plus, FileText, Bot, User, Settings } from 'lucide-react';
-import { useToast } from '@/components/ui/toast';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Skeleton } from '@/components/ui/skeleton';
 
-export default function ChatPage() {
+function ChatContent() {
   const searchParams = useSearchParams();
-  const { toast } = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const preselectedDocumentId = searchParams.get('documentId');
   
-  const [selectedDocument, setSelectedDocument] = useState<string>(preselectedDocumentId || '');
+  const [selectedDocument, setSelectedDocument] = useState<string>(preselectedDocumentId || 'all');
   const [selectedSession, setSelectedSession] = useState<string>('');
   const [message, setMessage] = useState('');
   const [useRag, setUseRag] = useState(true);
@@ -41,8 +47,7 @@ export default function ChatPage() {
     mutationFn: ({ documentId, name }: { documentId: string; name?: string }) =>
       apiClient.createChatSession(documentId, name),
     onSuccess: (data) => {
-      toast({
-        title: 'Session created',
+      toast.success('Session created', {
         description: 'New chat session has been created.',
       });
       setSelectedSession(data.id);
@@ -51,10 +56,8 @@ export default function ChatPage() {
       setSessionName('');
     },
     onError: (error: any) => {
-      toast({
-        title: 'Failed to create session',
+      toast.error('Failed to create session', {
         description: error.message || 'Please try again.',
-        variant: 'destructive',
       });
     },
   });
@@ -71,10 +74,8 @@ export default function ChatPage() {
       refetchMessages();
     },
     onError: (error: any) => {
-      toast({
-        title: 'Failed to send message',
+      toast.error('Failed to send message', {
         description: error.message || 'Please try again.',
-        variant: 'destructive',
       });
     },
   });
@@ -86,7 +87,7 @@ export default function ChatPage() {
 
   // Filter sessions for selected document
   const documentSessions = sessions?.filter(
-    session => !selectedDocument || session.document_id === selectedDocument
+    session => selectedDocument === 'all' || session.document_id === selectedDocument
   ) || [];
 
   const processedDocuments = documents?.filter(doc => doc.is_processed && doc.is_embedded) || [];
@@ -100,18 +101,16 @@ export default function ChatPage() {
 
     sendMessageMutation.mutate({
       message: currentMessage,
-      documentId: selectedDocument || undefined,
+      documentId: selectedDocument === 'all' ? undefined : selectedDocument,
       sessionId: selectedSession || undefined,
       useRag,
     });
   };
 
   const handleCreateSession = () => {
-    if (!selectedDocument) {
-      toast({
-        title: 'Select a document',
+    if (!selectedDocument || selectedDocument === 'all') {
+      toast.error('Select a document', {
         description: 'Please select a document before creating a session.',
-        variant: 'destructive',
       });
       return;
     }
@@ -126,96 +125,102 @@ export default function ChatPage() {
   return (
     <div className="h-[calc(100vh-8rem)] flex">
       {/* Sidebar */}
-      <div className="w-80 bg-white border-r flex flex-col">
+      <div className="w-80 bg-background border-r flex flex-col">
         <div className="p-4 border-b">
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <Label className="mb-1">
               Document
-            </label>
-            <select
+            </Label>
+            <Select
               value={selectedDocument}
-              onChange={(e) => {
-                setSelectedDocument(e.target.value);
+              onValueChange={(value) => {
+                setSelectedDocument(value);
                 setSelectedSession('');
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             >
-              <option value="">All documents</option>
-              {processedDocuments.map((doc) => (
-                <option key={doc.id} value={doc.id}>
-                  {doc.original_filename || doc.filename}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select a document" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All documents</SelectItem>
+                {processedDocuments.map((doc) => (
+                  <SelectItem key={doc.id} value={doc.id}>
+                    {doc.original_filename || doc.filename}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {isCreatingSession ? (
             <div className="space-y-2">
-              <input
+              <Input
                 type="text"
                 value={sessionName}
                 onChange={(e) => setSessionName(e.target.value)}
                 placeholder="Session name (optional)"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                 autoFocus
               />
               <div className="flex space-x-2">
-                <button
+                <Button
                   onClick={handleCreateSession}
-                  disabled={!selectedDocument || createSessionMutation.isPending}
-                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  disabled={!selectedDocument || selectedDocument === 'all' || createSessionMutation.isPending}
+                  className="flex-1"
+                  size="sm"
                 >
                   {createSessionMutation.isPending ? 'Creating...' : 'Create'}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => {
                     setIsCreatingSession(false);
                     setSessionName('');
                   }}
-                  className="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
-            <button
+            <Button
+              variant="outline"
+              className="w-full"
+              size="sm"
               onClick={() => setIsCreatingSession(true)}
-              className="w-full py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2 text-sm"
             >
-              <Plus className="h-4 w-4" />
-              <span>New Session</span>
-            </button>
+              <Plus className="h-4 w-4 mr-2" />
+              New Session
+            </Button>
           )}
         </div>
 
         <div className="flex-1 overflow-y-auto">
           {documentSessions.length === 0 ? (
-            <div className="p-4 text-center text-gray-700 text-sm">
+            <div className="p-4 text-center text-muted-foreground text-sm">
               No chat sessions yet
             </div>
           ) : (
             <div className="p-2 space-y-1">
               {documentSessions.map((session) => (
-                <button
+                <Button
                   key={session.id}
+                  variant={selectedSession === session.id ? "secondary" : "ghost"}
+                  className="w-full justify-start h-auto p-3"
                   onClick={() => setSelectedSession(session.id)}
-                  className={`w-full text-left p-3 rounded-lg transition-colors ${
-                    selectedSession === session.id
-                      ? 'bg-blue-50 border-blue-200 border'
-                      : 'hover:bg-gray-50'
-                  }`}
                 >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-medium text-gray-900 text-sm">
-                      {session.session_name || 'Untitled Session'}
-                    </span>
-                    <MessageSquare className="h-4 w-4 text-gray-700" />
+                  <div className="w-full text-left">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-medium text-sm">
+                        {session.session_name || 'Untitled Session'}
+                      </span>
+                      <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {session.message_count} messages • {formatRelativeTime(session.last_activity)}
+                    </div>
                   </div>
-                  <div className="text-xs text-gray-700">
-                    {session.message_count} messages • {formatRelativeTime(session.last_activity)}
-                  </div>
-                </button>
+                </Button>
               ))}
             </div>
           )}
@@ -227,32 +232,31 @@ export default function ChatPage() {
         {selectedSession ? (
           <>
             {/* Chat Header */}
-            <div className="bg-white border-b px-6 py-4">
+            <div className="bg-background border-b px-6 py-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-900">
+                  <h2 className="text-lg font-semibold">
                     {currentSession?.session_name || 'Chat Session'}
                   </h2>
-                  <p className="text-sm text-gray-700">
+                  <p className="text-sm text-muted-foreground">
                     {currentSession && formatDate(currentSession.created_at)}
                   </p>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <label className="flex items-center space-x-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={useRag}
-                      onChange={(e) => setUseRag(e.target.checked)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-gray-700">Use RAG</span>
-                  </label>
+                  <Checkbox
+                    id="use-rag"
+                    checked={useRag}
+                    onCheckedChange={(checked) => setUseRag(checked as boolean)}
+                  />
+                  <Label htmlFor="use-rag" className="text-sm cursor-pointer">
+                    Use RAG
+                  </Label>
                 </div>
               </div>
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto bg-gray-50 px-6 py-4">
+            <div className="flex-1 overflow-y-auto bg-secondary/30 px-6 py-4">
               {messages && messages.length > 0 ? (
                 <div className="space-y-4 max-w-4xl mx-auto">
                   {messages.map((msg) => (
@@ -264,38 +268,38 @@ export default function ChatPage() {
                         msg.role === 'user' ? 'flex-row-reverse space-x-reverse' : ''
                       }`}>
                         <div className={`p-2 rounded-full ${
-                          msg.role === 'user' ? 'bg-blue-600' : 'bg-gray-600'
+                          msg.role === 'user' ? 'bg-primary' : 'bg-muted'
                         }`}>
                           {msg.role === 'user' ? (
-                            <User className="h-4 w-4 text-white" />
+                            <User className="h-4 w-4 text-primary-foreground" />
                           ) : (
-                            <Bot className="h-4 w-4 text-white" />
+                            <Bot className="h-4 w-4 text-foreground" />
                           )}
                         </div>
-                        <div className={`px-4 py-2 rounded-lg ${
-                          msg.role === 'user'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-white border'
-                        }`}>
-                          <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                          <p className={`text-xs mt-1 ${
-                            msg.role === 'user' ? 'text-blue-100' : 'text-gray-700'
-                          }`}>
-                            {formatRelativeTime(msg.created_at)}
-                          </p>
-                        </div>
+                        <Card className={msg.role === 'user' ? 'bg-primary text-primary-foreground' : ''}>
+                          <CardContent className="p-4">
+                            <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                            <p className={`text-xs mt-1 ${
+                              msg.role === 'user' ? 'opacity-80' : 'text-muted-foreground'
+                            }`}>
+                              {formatRelativeTime(msg.created_at)}
+                            </p>
+                          </CardContent>
+                        </Card>
                       </div>
                     </div>
                   ))}
                   {sendMessageMutation.isPending && (
                     <div className="flex justify-start">
                       <div className="flex items-start space-x-2 max-w-[80%]">
-                        <div className="p-2 rounded-full bg-gray-600">
-                          <Bot className="h-4 w-4 text-white" />
+                        <div className="p-2 rounded-full bg-muted">
+                          <Bot className="h-4 w-4 text-foreground" />
                         </div>
-                        <div className="px-4 py-2 rounded-lg bg-white border">
-                          <Loader2 className="h-4 w-4 animate-spin text-gray-700" />
-                        </div>
+                        <Card>
+                          <CardContent className="p-4">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          </CardContent>
+                        </Card>
                       </div>
                     </div>
                   )}
@@ -304,9 +308,9 @@ export default function ChatPage() {
               ) : (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
-                    <MessageSquare className="h-12 w-12 text-gray-700 mx-auto mb-4" />
-                    <p className="text-gray-800">Start a conversation</p>
-                    <p className="text-sm text-gray-700 mt-2">
+                    <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-lg font-medium">Start a conversation</p>
+                    <p className="text-sm text-muted-foreground mt-2">
                       Ask questions about your document
                     </p>
                   </div>
@@ -315,51 +319,58 @@ export default function ChatPage() {
             </div>
 
             {/* Message Input */}
-            <div className="bg-white border-t px-6 py-4">
+            <div className="bg-background border-t px-6 py-4">
               <form onSubmit={handleSendMessage} className="flex space-x-2">
-                <input
+                <Input
                   type="text"
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
                   placeholder="Type your message..."
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   disabled={sendMessageMutation.isPending}
+                  className="flex-1"
                 />
-                <button
+                <Button
                   type="submit"
                   disabled={!message.trim() || sendMessageMutation.isPending}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                  size="icon"
                 >
                   {sendMessageMutation.isPending ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <Send className="h-5 w-5" />
+                    <Send className="h-4 w-4" />
                   )}
-                </button>
+                </Button>
               </form>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center bg-gray-50">
+          <div className="flex-1 flex items-center justify-center bg-secondary/30">
             <div className="text-center">
-              <MessageSquare className="h-16 w-16 text-gray-700 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No session selected</h3>
-              <p className="text-gray-700 mb-4">
+              <MessageSquare className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium mb-2">No session selected</h3>
+              <p className="text-muted-foreground mb-4">
                 Select an existing session or create a new one to start chatting
               </p>
-              {selectedDocument && (
-                <button
+              {selectedDocument && selectedDocument !== 'all' && (
+                <Button
                   onClick={() => setIsCreatingSession(true)}
-                  className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
                   <Plus className="h-4 w-4 mr-2" />
                   Create New Session
-                </button>
+                </Button>
               )}
             </div>
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+      <ChatContent />
+    </Suspense>
   );
 }
