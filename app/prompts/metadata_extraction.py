@@ -6,38 +6,28 @@ FINANCIAL_FACTS_SYSTEM_PROMPT = """
 You are a financial analyst expert. Extract key financial facts from the provided document text.
 Focus on numerical data like revenue, profit, losses, expenses, cash flow, debt, etc.
 
-Return the results as a valid JSON object with the following structure:
-{
-    "revenue": {
-        "current_year": number or null,
-        "previous_year": number or null,
-        "currency": "USD" or other,
-        "period": "annual" or "quarterly" or "monthly"
-    },
-    "profit_loss": {
-        "net_income": number or null,
-        "gross_profit": number or null,
-        "operating_profit": number or null,
-        "currency": "USD" or other
-    },
-    "cash_flow": {
-        "operating_cash_flow": number or null,
-        "free_cash_flow": number or null,
-        "currency": "USD" or other
-    },
-    "debt_equity": {
-        "total_debt": number or null,
-        "equity": number or null,
-        "debt_to_equity_ratio": number or null
-    },
-    "other_metrics": {
-        "ebitda": number or null,
-        "margin_percentage": number or null,
-        "growth_rate": number or null
-    }
-}
+Search for financial information in these common formats:
+- Financial statements, income statements, balance sheets
+- Executive summaries with financial highlights  
+- Tables with financial data
+- Text with dollar amounts like "$5.2M", "5.2 million", "5,200,000"
+- Percentages for growth rates, margins, ratios
+- Financial metrics like EBITDA, revenue, profit/loss
+- Cash flow statements and metrics
 
-If a value is not found or unclear, use null. All monetary values should be in the base unit (e.g., if document says "$5.2M", return 5200000).
+Look for keywords like: revenue, sales, income, profit, loss, EBITDA, cash flow, debt, equity, assets, liabilities, gross profit, net income, operating profit.
+
+Search the ENTIRE document thoroughly - financial data may appear anywhere, not just at the beginning.
+
+Output:
+Always return the results in a valid JSON object with the provided response format.
+
+Important rules:
+- If a numerical value is not found or unclear, use null
+- For currency fields: if the document clearly specifies a currency (EUR, GBP, CAD, etc.), use that currency code. Otherwise, always use "USD" as the default
+- All monetary values should be in the base unit (e.g., if document says "$5.2M", return 5200000)
+- NEVER use the string "null" for currency - always use "USD" if currency is unclear
+- Be thorough - scan the entire provided text for any financial figures
 """
 
 INVESTMENT_DATA_SYSTEM_PROMPT = """
@@ -77,12 +67,51 @@ Return results as a valid JSON object:
 If information is not found or unclear, use appropriate empty values (empty lists, null values).
 """
 
+INVESTMENT_DATA_USER_TEMPLATE = "Extract investment data from this document:\n\n{text}..."
+
+FINANCIAL_FACTS_USER_TEMPLATE = """
+Extract financial facts from document.
+
+--- RESPONSE FORMAT ---
+{
+    "revenue": {
+        "current_year": number,
+        "previous_year": number,
+        "currency": "USD",
+        "period": "annual" or "quarterly" or "monthly"
+    },
+    "profit_loss": {
+        "net_income": number,
+        "gross_profit": number,
+        "operating_profit": number,
+        "currency": "USD"
+    },
+    "cash_flow": {
+        "operating_cash_flow": number,
+        "free_cash_flow": number,
+        "currency": "USD"
+    },
+    "debt_equity": {
+        "total_debt": number,
+        "equity": number,
+        "debt_to_equity_ratio": number
+    },
+    "other_metrics": {
+        "ebitda": number,
+        "margin_percentage": number,
+        "growth_rate": number
+    }
+}
+--- RESPONSE FORMAT ---
+
+--- START OF DOCUMENT TEXT ---
+{text}
+--- END OF DOCUMENT TEXT ---
+"""
+
 DOCUMENT_SUMMARY_SYSTEM_PROMPT = """
 Create a concise summary of this financial document in {max_length} words or less.
 Focus on the key business information, financial highlights, and main value propositions.
 Make it suitable for executive review.
 """
-
-FINANCIAL_FACTS_USER_TEMPLATE = "Extract financial facts from this document:\n\n{text}..."
-INVESTMENT_DATA_USER_TEMPLATE = "Extract investment data from this document:\n\n{text}..."
 DOCUMENT_SUMMARY_USER_TEMPLATE = "Summarize this document:\n\n{text}..."

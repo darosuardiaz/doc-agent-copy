@@ -607,3 +607,43 @@ async def delete_document(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error deleting document: {str(e)}"
         )
+
+
+@router.post("/test-extraction/{document_id}")
+async def test_metadata_extraction(
+    document_id: str,
+    db: Session = Depends(get_database)
+):
+    """
+    Test endpoint to manually trigger metadata extraction for a specific document.
+    Useful for debugging extraction issues.
+    """
+    try:
+        logger.info(f"Testing metadata extraction for document {document_id}")
+        
+        # Check if document exists
+        document = db.query(Document).filter(Document.id == document_id).first()
+        if not document:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Document {document_id} not found"
+            )
+        
+        # Run metadata extraction
+        result = await metadata_extractor.extract_metadata(document_id)
+        
+        logger.info(f"Test extraction completed for {document_id}")
+        return {
+            "document_id": document_id,
+            "extraction_result": result,
+            "message": "Metadata extraction test completed successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in test extraction for document {document_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error in test extraction: {str(e)}"
+        )
