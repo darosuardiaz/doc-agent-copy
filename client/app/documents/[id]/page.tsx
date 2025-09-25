@@ -7,6 +7,8 @@ import { formatBytes, formatDate } from '@/lib/utils';
 import { FileText, Loader2, AlertCircle, CheckCircle, Clock, Brain, MessageSquare, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect } from 'react';
+import FinancialFacts from '@/components/FinancialFacts';
+import InvestmentData from '@/components/InvestmentData';
 
 export default function DocumentDetailsPage() {
   const params = useParams();
@@ -21,8 +23,9 @@ export default function DocumentDetailsPage() {
   const { data: status, isLoading: statusLoading } = useQuery({
     queryKey: ['document-status', documentId],
     queryFn: () => apiClient.getDocumentStatus(documentId),
-    refetchInterval: (data) => {
+    refetchInterval: (query) => {
       // Stop polling if processing is complete
+      const data = query?.state?.data;
       if (data?.is_processed && data?.is_embedded) {
         return false;
       }
@@ -79,7 +82,7 @@ export default function DocumentDetailsPage() {
             <h1 className="text-3xl font-bold text-gray-900 mb-2">
               {document.original_filename || document.filename}
             </h1>
-            <p className="text-gray-700">Document ID: {document.id}</p>
+            <p className="text-gray-800">Document ID: {document.id}</p>
           </div>
           
           <div className="flex items-center space-x-3">
@@ -163,66 +166,42 @@ export default function DocumentDetailsPage() {
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Document Information</h2>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <span className="text-gray-700">File Size:</span>
-              <p className="font-medium">{formatBytes(document.file_size)}</p>
+              <span className="text-gray-800">File Size:</span>
+              <p className="font-medium text-gray-900">{formatBytes(document.file_size)}</p>
             </div>
             <div>
-              <span className="text-gray-700">Pages:</span>
-              <p className="font-medium">{document.page_count || 'N/A'}</p>
+              <span className="text-gray-800">Pages:</span>
+              <p className="font-medium text-gray-900">{document.page_count || 'N/A'}</p>
             </div>
             <div>
-              <span className="text-gray-700">Words:</span>
-              <p className="font-medium">
+              <span className="text-gray-800">Words:</span>
+              <p className="font-medium text-gray-900">
                 {document.word_count ? document.word_count.toLocaleString() : 'N/A'}
               </p>
             </div>
             <div>
-              <span className="text-gray-700">Embeddings:</span>
-              <p className="font-medium">{document.embedding_count || 'N/A'}</p>
+              <span className="text-gray-800">Embeddings:</span>
+              <p className="font-medium text-gray-900">{document.embedding_count || 'N/A'}</p>
             </div>
             <div>
-              <span className="text-gray-700">Created:</span>
-              <p className="font-medium">{formatDate(document.created_at)}</p>
+              <span className="text-gray-800">Created:</span>
+              <p className="font-medium text-gray-900">{formatDate(document.created_at)}</p>
             </div>
             <div>
-              <span className="text-gray-700">Updated:</span>
-              <p className="font-medium">{document.updated_at ? formatDate(document.updated_at) : 'N/A'}</p>
+              <span className="text-gray-800">Updated:</span>
+              <p className="font-medium text-gray-900">{document.updated_at ? formatDate(document.updated_at) : 'N/A'}</p>
             </div>
           </div>
         </div>
 
         {/* Financial Facts */}
         {document.financial_facts && Object.keys(document.financial_facts).length > 0 && (
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Financial Facts</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {Object.entries(document.financial_facts).map(([key, value]) => (
-                <div key={key}>
-                  <span className="text-gray-700 text-sm">
-                    {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:
-                  </span>
-                  <p className="font-medium">{String(value)}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+          <FinancialFacts financialFacts={document.financial_facts} />
         )}
 
         {/* Investment Data */}
         {document.investment_data && Object.keys(document.investment_data).length > 0 && (
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Investment Data</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {Object.entries(document.investment_data).map(([key, value]) => (
-                <div key={key}>
-                  <span className="text-gray-700 text-sm">
-                    {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:
-                  </span>
-                  <p className="font-medium">{String(value)}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+          <InvestmentData investmentData={document.investment_data} />
         )}
 
         {/* Key Metrics */}
@@ -232,10 +211,10 @@ export default function DocumentDetailsPage() {
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {Object.entries(document.key_metrics).map(([key, value]) => (
                 <div key={key}>
-                  <span className="text-gray-700 text-sm">
+                  <span className="text-gray-800 text-sm">
                     {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:
                   </span>
-                  <p className="font-medium">
+                  <p className="font-medium text-gray-900">
                     {typeof value === 'number' ? value.toLocaleString() : String(value)}
                   </p>
                 </div>
