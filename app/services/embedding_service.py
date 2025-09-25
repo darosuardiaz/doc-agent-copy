@@ -1,5 +1,5 @@
 """
-Embedding service for generating and storing document embeddings in Pinecone.
+Embedding service for generating and storing document embeddings in Pinecone using LangChain.
 """
 import logging
 from typing import List, Dict, Any, Optional, Tuple
@@ -10,6 +10,8 @@ import hashlib
 from openai import AsyncOpenAI
 from pinecone import Pinecone, ServerlessSpec
 from langchain_openai import OpenAIEmbeddings
+from langchain_pinecone import PineconeVectorStore
+from langchain.schema import Document as LangChainDocument
 
 from app.config import get_settings
 from app.database.models import Document, DocumentChunk
@@ -24,10 +26,10 @@ class EmbeddingService:
     
     def __init__(self):
         """Initialize the embedding service."""
-        # Initialize OpenAI client
+        # Initialize OpenAI client (still needed for some operations)
         self.openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         
-        # Initialize Pinecone
+        # Initialize Pinecone client (for index management)
         self.pinecone = Pinecone(api_key=settings.PINECONE_API_KEY)
         
         # Initialize LangChain embeddings
@@ -38,6 +40,13 @@ class EmbeddingService:
         
         # Initialize or get Pinecone index
         self.index = self._initialize_pinecone_index()
+        
+        # Initialize PineconeVectorStore
+        self.vector_store = PineconeVectorStore(
+            index=self.index,
+            embedding=self.embeddings,
+            text_key="content"
+        )
     
     def _initialize_pinecone_index(self):
         """Initialize or connect to the Pinecone index."""
@@ -66,8 +75,10 @@ class EmbeddingService:
                     logger.error(f"Pinecone index dimension mismatch! "
                                f"Expected: {settings.PINECONE_DIMENSION}, "
                                f"Found: {index_stats.dimension}")
+                    
                     logger.info("Deleting existing index with wrong dimensions...")
                     self.pinecone.delete_index(settings.PINECONE_INDEX_NAME)
+                    
                     logger.info("Creating new index with correct dimensions...")
                     self.pinecone.create_index(
                         name=settings.PINECONE_INDEX_NAME,
@@ -133,10 +144,8 @@ class EmbeddingService:
                 doc_filename = document.filename
                 doc_original_filename = document.original_filename
             
-            # Prepare texts and metadata for embedding
-            texts = [chunk['content'] for chunk in chunk_data]
-            metadatas = []
-            
+            # Prepare LangChain documents for embedding
+            langchain_docs = []
             for chunk in chunk_data:
                 metadata = {
                     'document_id': str(document_id),
@@ -149,44 +158,40 @@ class EmbeddingService:
                     'token_count': chunk['token_count'],
                     'created_at': chunk['created_at']
                 }
-                metadatas.append(metadata)
+                
+                doc = LangChainDocument(
+                    page_content=chunk['content'],
+                    metadata=metadata
+                )
+                langchain_docs.append(doc)
             
-            # Generate embeddings in batches
-            batch_size = 100  # Pinecone batch limit
+            # Use PineconeVectorStore to add documents with custom IDs
+            doc_ids = [self._generate_vector_id(document_id, chunk['id']) for chunk in chunk_data]
+            
+            # Process in batches to avoid memory issues
+            batch_size = 100
             embedded_count = 0
             
-            for i in range(0, len(texts), batch_size):
-                batch_texts = texts[i:i + batch_size]
-                batch_metadatas = metadatas[i:i + batch_size]
+            for i in range(0, len(langchain_docs), batch_size):
+                batch_docs = langchain_docs[i:i + batch_size]
+                batch_ids = doc_ids[i:i + batch_size]
                 batch_chunk_data = chunk_data[i:i + batch_size]
                 
-                # Generate embeddings for this batch
-                embeddings = await self._generate_embeddings(batch_texts)
-                
-                # Prepare vectors for Pinecone
-                vectors_to_upsert = []
-                for j, (embedding, metadata, chunk_info) in enumerate(zip(embeddings, batch_metadatas, batch_chunk_data)):
-                    vector_id = self._generate_vector_id(document_id, chunk_info['id'])
-                    
-                    vectors_to_upsert.append({
-                        'id': vector_id,
-                        'values': embedding,
-                        'metadata': metadata
-                    })
-                
-                # Upsert to Pinecone
-                upsert_response = self.index.upsert(
-                    vectors=vectors_to_upsert,
+                # Add documents to vector store with namespace
+                await asyncio.to_thread(
+                    self.vector_store.add_documents,
+                    documents=batch_docs,
+                    ids=batch_ids,
                     namespace=self._get_namespace(document_id)
                 )
                 
-                embedded_count += len(vectors_to_upsert)
-                logger.info(f"Embedded batch {i//batch_size + 1}: {len(vectors_to_upsert)} vectors")
+                embedded_count += len(batch_docs)
+                logger.info(f"Embedded batch {i//batch_size + 1}: {len(batch_docs)} vectors")
                 
                 # Update chunk records with Pinecone IDs
                 with get_db_session() as db:
                     for j, chunk_info in enumerate(batch_chunk_data):
-                        vector_id = vectors_to_upsert[j]['id']
+                        vector_id = batch_ids[j]
                         chunk_record = db.query(DocumentChunk).filter(DocumentChunk.id == chunk_info['id']).first()
                         if chunk_record:
                             chunk_record.pinecone_id = vector_id
@@ -247,8 +252,8 @@ class EmbeddingService:
         return f"doc_{str(document_id).replace('-', '_')}"
     
     async def search_similar_chunks(
-        self, 
-        query: str, 
+        self,
+        query: str,
         document_id: Optional[str] = None,
         top_k: int = 10,
         similarity_threshold: float = 0.7
@@ -266,42 +271,98 @@ class EmbeddingService:
             List of similar chunks with metadata and similarity scores
         """
         try:
-            # Generate embedding for the query
-            query_embedding = await self._generate_embeddings([query])
-            query_vector = query_embedding[0]
-            
-            # Determine namespace
+            # Determine namespace for search
             namespace = self._get_namespace(document_id) if document_id else None
-            
-            # Search in Pinecone
-            search_results = self.index.query(
-                vector=query_vector,
-                top_k=top_k,
-                namespace=namespace,
-                include_values=False,
-                include_metadata=True
-            )
-            
+
+            # Prefer normalized relevance scores when available
+            use_relevance_scores = hasattr(self.vector_store, 'similarity_search_with_relevance_scores')
+
+            # Execute search (avoid passing score_threshold because support varies by version)
+            try:
+                if use_relevance_scores:
+                    if namespace:
+                        search_results = await asyncio.to_thread(
+                            self.vector_store.similarity_search_with_relevance_scores,  # type: ignore[attr-defined]
+                            query,
+                            k=top_k,
+                            namespace=namespace
+                        )
+                    else:
+                        search_results = await asyncio.to_thread(
+                            self.vector_store.similarity_search_with_relevance_scores,  # type: ignore[attr-defined]
+                            query,
+                            k=top_k
+                        )
+                else:
+                    if namespace:
+                        search_results = await asyncio.to_thread(
+                            self.vector_store.similarity_search_with_score,
+                            query,
+                            k=top_k,
+                            namespace=namespace
+                        )
+                    else:
+                        search_results = await asyncio.to_thread(
+                            self.vector_store.similarity_search_with_score,
+                            query,
+                            k=top_k
+                        )
+            except TypeError:
+                # Fallback if the underlying method signature differs (e.g., namespace unsupported)
+                if use_relevance_scores:
+                    search_results = await asyncio.to_thread(
+                        self.vector_store.similarity_search_with_relevance_scores,  # type: ignore[attr-defined]
+                        query,
+                        k=top_k
+                    )
+                else:
+                    search_results = await asyncio.to_thread(
+                        self.vector_store.similarity_search_with_score,
+                        query,
+                        k=top_k
+                    )
+
             # Process results
-            similar_chunks = []
-            for match in search_results.matches:
-                if match.score >= similarity_threshold:
-                    # Get full chunk content from database
-                    chunk_id = match.metadata.get('chunk_id')
-                    
-                    with get_db_session() as db:
-                        chunk = db.query(DocumentChunk).filter(DocumentChunk.id == chunk_id).first()
-                        if chunk:
-                            similar_chunks.append({
-                                'chunk_id': chunk_id,
-                                'content': chunk.content,
-                                'similarity_score': float(match.score),
-                                'metadata': match.metadata,
-                                'page_number': chunk.page_number,
-                                'chunk_index': chunk.chunk_index
-                            })
-            
-            logger.info(f"Found {len(similar_chunks)} similar chunks for query: {query[:50]}...")
+            similar_chunks: List[Dict[str, Any]] = []
+            top_scores: List[float] = []
+            for doc, score in search_results:
+                score_value = float(score)
+                top_scores.append(score_value)
+                # If relevance scores are available, treat threshold as normalized similarity
+                # Otherwise, include results without filtering (to avoid false negatives from distance semantics)
+                if use_relevance_scores and score_value < similarity_threshold:
+                    continue
+
+                chunk_id = doc.metadata.get('chunk_id')
+
+                # Get full chunk content from database
+                with get_db_session() as db:
+                    chunk = db.query(DocumentChunk).filter(DocumentChunk.id == chunk_id).first()
+                    if chunk:
+                        similar_chunks.append({
+                            'chunk_id': chunk_id,
+                            'content': doc.page_content,
+                            'similarity_score': score_value,
+                            'metadata': doc.metadata,
+                            'page_number': chunk.page_number,
+                            'chunk_index': chunk.chunk_index
+                        })
+
+            # If no results found, relax constraints once: lower threshold and increase k
+            if not similar_chunks and similarity_threshold > 0.3:
+                logger.info(
+                    f"No similar chunks found (scores={top_scores[:3]}). Retrying with relaxed threshold and k."
+                )
+                return await self.search_similar_chunks(
+                    query=query,
+                    document_id=document_id,
+                    top_k=max(top_k, 12),
+                    similarity_threshold=0.3
+                )
+
+            logger.info(
+                f"Found {len(similar_chunks)} similar chunks for query: {query[:50]}... Top scores: {top_scores[:3]}"
+            )
             return similar_chunks
             
         except Exception as e:
@@ -331,8 +392,12 @@ class EmbeddingService:
                 vector_ids = [chunk.pinecone_id for chunk in chunks]
             
             if vector_ids:
-                # Delete from Pinecone
-                self.index.delete(ids=vector_ids, namespace=namespace)
+                # Delete from Pinecone using the direct index (PineconeVectorStore doesn't have a bulk delete method)
+                await asyncio.to_thread(
+                    self.index.delete,
+                    ids=vector_ids,
+                    namespace=namespace
+                )
                 logger.info(f"Deleted {len(vector_ids)} vectors for document {document_id}")
             
             # Update database records

@@ -32,10 +32,10 @@ export default function ResearchPage() {
   const startResearchMutation = useMutation({
     mutationFn: ({ documentId, topic, customQuery }: { documentId: string; topic: string; customQuery?: string }) =>
       apiClient.startResearch(documentId, topic, customQuery),
-    onSuccess: (data) => {
+    onSuccess: (_data, variables) => {
       toast({
         title: 'Research started',
-        description: `Research task "${data.topic}" has been initiated.`,
+        description: `Research task "${variables.topic}" has been initiated.`,
       });
       refetchTasks();
       // Clear form
@@ -227,6 +227,16 @@ export default function ResearchPage() {
                       )}
                     </div>
 
+                    {/* Summary */}
+                    {task.research_findings && (task.research_findings as any).summary && (
+                      <div className="mt-6">
+                        <h4 className="font-medium text-gray-900 mb-3">Summary</h4>
+                        <div className="prose prose-sm max-w-none whitespace-pre-wrap text-gray-800">
+                          {(task.research_findings as any).summary}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Content Outline */}
                     {task.content_outline && Object.keys(task.content_outline).length > 0 && (
                       <div className="mt-6">
@@ -286,17 +296,19 @@ export default function ResearchPage() {
                       <div className="mt-6">
                         <h4 className="font-medium text-gray-900 mb-3">Sources Used</h4>
                         <div className="space-y-2">
-                          {task.sources_used.slice(0, 5).map((source, idx) => (
-                            <div key={idx} className="bg-gray-50 rounded p-3 text-sm">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="font-medium text-gray-800">Page {source.page}</span>
-                                <span className="text-xs text-gray-800">
-                                  Relevance: {(source.relevance_score * 100).toFixed(0)}%
-                                </span>
+                          {task.sources_used.slice(0, 5).map((source: any, idx: number) => {
+                            const page = source?.page ?? source?.page_number ?? source?.metadata?.page_number;
+                            const chunk = source?.chunk ?? source?.chunk_index ?? source?.metadata?.chunk_index;
+                            return (
+                              <div key={idx} className="bg-gray-50 rounded p-3 text-sm">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="font-medium text-gray-800">
+                                    {page ? `Page ${page}` : 'Source'}{typeof chunk === 'number' ? `, Chunk ${chunk}` : ''}
+                                  </span>
+                                </div>
                               </div>
-                              <p className="text-gray-800 line-clamp-2">{source.content}</p>
-                            </div>
-                          ))}
+                            );
+                          })}
                           {task.sources_used.length > 5 && (
                             <p className="text-sm text-gray-800 text-center">
                               and {task.sources_used.length - 5} more sources...

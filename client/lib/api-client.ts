@@ -52,7 +52,15 @@ export interface ResearchTask {
   processing_time?: number;
   content_outline?: Record<string, { title: string; description: string }>;
   research_findings?: Record<string, { content: string; key_points: string[] }>;
-  sources_used?: Array<{ page: number; content: string; relevance_score: number }>;
+  sources_used?: Array<{ page: number; chunk: number }>;
+}
+
+export interface ResearchStartResponse {
+  task_id: string;
+  content_outline: Record<string, any>;
+  research_findings: Record<string, any>;
+  sources_used: Array<{ page: number; chunk: number }>;
+  processing_time: number;
 }
 
 export interface ChatSession {
@@ -206,8 +214,8 @@ export class APIClient {
     documentId: string,
     topic: string,
     customQuery?: string
-  ): Promise<ResearchTask> {
-    const response = await this.axios.post<ResearchTask>(
+  ): Promise<ResearchStartResponse> {
+    const response = await this.axios.post<ResearchStartResponse>(
       `/documents/${documentId}/research/start`,
       {
         topic,

@@ -13,6 +13,7 @@ pymupdf
 
 # Vector store and embeddings
 pinecone
+langchain-pinecone
 openai
 
 # Database

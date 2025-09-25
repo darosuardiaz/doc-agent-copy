@@ -1,6 +1,5 @@
 """
-Deep Research Agent refactored following the langchain local-deep-researcher pattern.
-Uses ChatOpenAI and Vector Search instead of web search.
+Deep Research Agent. Uses ChatOpenAI and Vector Search on indexed documents.
 """
 import logging
 from typing import Dict, Any, List, Optional, Literal
@@ -59,6 +58,7 @@ class ResearchStateOutput(BaseModel):
     document_id: str
     task_id: Optional[str]
     errors: List[str]
+    retrieved_chunks: List[Dict[str, Any]]
 
 
 class Configuration(BaseModel):
@@ -71,13 +71,17 @@ class Configuration(BaseModel):
 
 # Prompts following the reference implementation pattern
 QUERY_WRITER_INSTRUCTIONS = """You are a research query specialist for financial document analysis.
-Your task is to generate targeted search queries to find specific information within a financial document.
+Your task is to generate a concise, document-internal search query to find information within a single financial document (not the web).
+
+Rules:
+- Target headings, section titles, and key phrases likely present in the document
+- Avoid web operators, URLs, tickers, or site: filters
+- Keep it short (3-12 words), descriptive, and specific
 
 Current Date: {current_date}
 Research Topic: {research_topic}
 
-Generate a specific, focused search query that will help find relevant information about this topic in the document.
-The query should be optimized for semantic similarity search within financial documents."""
+Generate a specific, focused search query optimized for semantic similarity search within financial documents."""
 
 QUERY_WRITER_JSON_INSTRUCTIONS = """
 Respond with a JSON object in the following format:
@@ -105,7 +109,7 @@ Review the current summary and identify:
 2. What aspects need more detail or clarification?
 3. What follow-up questions would provide valuable insights?
 
-Generate a follow-up search query to address the most important knowledge gap."""
+Generate one concise, document-internal follow-up search query (no web operators or site: filters) that best addresses the most important gap."""
 
 REFLECTION_JSON_INSTRUCTIONS = """
 Respond with a JSON object in the following format:
@@ -228,16 +232,32 @@ class DeepResearchAgent:
                 running_summary = final_state.get('running_summary', '')
                 sources_gathered = final_state.get('sources_gathered', [])
                 errors = final_state.get('errors', [])
+                retrieved_chunks = final_state.get('retrieved_chunks', [])
             else:
                 running_summary = final_state.running_summary
                 sources_gathered = final_state.sources_gathered
                 errors = final_state.errors
+                retrieved_chunks = final_state.retrieved_chunks
+
+            # Derive structured sources {page, chunk} from retrieved chunks (deduplicated)
+            seen_pairs = set()
+            structured_sources = []
+            for ch in retrieved_chunks or []:
+                page = ch.get('page_number')
+                chunk_idx = ch.get('chunk_index')
+                if page is None or chunk_idx is None:
+                    continue
+                pair = (page, chunk_idx)
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                structured_sources.append({"page": page, "chunk": chunk_idx})
             
             # Update database with results
             await self._update_research_task(
                 task_id,
                 running_summary,
-                sources_gathered,
+                structured_sources,
                 "completed" if not errors else "failed",
                 errors
             )
@@ -249,7 +269,7 @@ class DeepResearchAgent:
                 'document_id': document_id,
                 'topic': topic,
                 'summary': running_summary,
-                'sources': sources_gathered,
+                'sources': structured_sources,
                 'status': 'completed' if not errors else 'failed',
                 'errors': errors
             }
@@ -406,15 +426,7 @@ class DeepResearchAgent:
                         seen_sources.add(line)
                         unique_sources.append(line)
             
-            all_sources = "\n".join(unique_sources)
-            
-            final_summary = (
-                f"## Research Summary: {state.research_topic}\n\n"
-                f"{state.running_summary}\n\n"
-                f"### Sources Used:\n{all_sources}"
-            )
-            
-            return {"running_summary": final_summary}
+            return {"running_summary": state.running_summary}
             
         except Exception as e:
             logger.error(f"Error finalizing summary: {str(e)}")
@@ -455,7 +467,7 @@ class DeepResearchAgent:
             task = db.query(ResearchTask).filter(ResearchTask.id == task_id).first()
             if task:
                 task.research_findings = {"summary": summary}
-                task.sources_used = [{"source": s} for s in sources]
+                task.sources_used = sources
                 task.status = status
                 task.completed_at = datetime.now()
                 
