@@ -24,8 +24,8 @@ export function MessageSources({ sources }: MessageSourcesProps) {
       </div>
       <div className="space-y-2">
         {sources.map((source, index) => (
-          <div key={source.chunk_id || index} className="text-sm">
-            <div className="flex items-start space-x-2">
+          <div key={source.chunk_id || index} className="text-sm relative group">
+            <div className="flex items-start space-x-2 cursor-pointer">
               <ExternalLink className="h-3 w-3 text-gray-400 mt-0.5 flex-shrink-0" />
               <div className="flex-1">
                 <div className="flex items-center space-x-2 text-xs text-gray-600">
@@ -39,13 +39,18 @@ export function MessageSources({ sources }: MessageSourcesProps) {
                     <span>Score: {(source.similarity_score * 100).toFixed(0)}%</span>
                   )}
                 </div>
-                {source.preview && (
-                  <p className="text-xs text-gray-600 mt-1 line-clamp-2">
-                    {source.preview}
-                  </p>
-                )}
               </div>
             </div>
+            {source.preview && (
+              <div className="absolute left-0 top-full mt-1 z-10 invisible group-hover:visible opacity-0 group-hover:opacity-100 transition-all duration-200 delay-300">
+                <div className="bg-gray-900 text-white text-xs rounded-lg p-3 shadow-lg max-w-xs min-w-48 relative">
+                  <div className="absolute -top-1 left-4 w-2 h-2 bg-gray-900 rotate-45"></div>
+                  <p className="leading-relaxed">
+                    {source.preview}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>

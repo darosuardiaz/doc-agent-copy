@@ -370,7 +370,7 @@ class ChatAgentWithTools:
             
             # Extract the final assistant message
             assistant_response = None
-            for msg in reversed(final_state.messages):
+            for msg in reversed(final_state.get("messages", [])):
                 if isinstance(msg, AIMessage) and not isinstance(msg, ToolMessage):
                     assistant_response = msg.content
                     break
@@ -380,9 +380,10 @@ class ChatAgentWithTools:
             
             # Format sources for response
             formatted_sources = None
-            if final_state.sources_used:
+            sources_used = final_state.get("sources_used")
+            if sources_used:
                 formatted_sources = []
-                for source in final_state.sources_used:
+                for source in sources_used:
                     formatted_sources.append({
                         'chunk_id': source.get('chunk_id'),
                         'page_number': source.get('page_number'),
@@ -390,14 +391,17 @@ class ChatAgentWithTools:
                         'preview': source.get('content', '')[:200] + "..." if source.get('content') else ""
                     })
             
+            tool_calls = final_state.get("tool_calls", [])
+            errors = final_state.get("errors")
+
             return {
                 'message': assistant_response,
                 'session_id': session_id,
                 'sources_used': formatted_sources,
-                'tool_calls': final_state.tool_calls,
+                'tool_calls': tool_calls,
                 'response_time': response_time,
                 'token_count': self._estimate_tokens(assistant_response),
-                'errors': final_state.errors if final_state.errors else None
+                'errors': errors if errors else None
             }
             
         except Exception as e:
