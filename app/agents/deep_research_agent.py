@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.services.embedding_service import embedding_service
+from app.tools import vector_search_tool
 from app.database.models import Document, ResearchTask
 from app.database.connection import get_db_session
 
@@ -314,29 +315,24 @@ class DeepResearchAgent:
         """Perform vector search using the generated query."""
         try:
             logger.info(f"Performing vector search with query: {state.search_query}")
-            
-            # Search for similar chunks
-            similar_chunks = await embedding_service.search_similar_chunks(
+
+            result = await vector_search_tool.search(
                 query=state.search_query,
                 document_id=state.document_id,
                 top_k=self.config.top_k,
-                similarity_threshold=self.config.similarity_threshold
+                similarity_threshold=self.config.similarity_threshold,
+                max_tokens_per_source=MAX_TOKENS_PER_SOURCE,
             )
-            
-            # Format search results
-            search_str = deduplicate_and_format_sources(
-                similar_chunks,
-                max_tokens_per_source=MAX_TOKENS_PER_SOURCE
-            )
-            
-            # Format sources for citation
-            sources_str = format_sources(similar_chunks)
-            
+
+            similar_chunks = result.get("similar_chunks", [])
+            search_str = result.get("formatted_results", "")
+            sources_str = result.get("formatted_sources", "")
+
             return {
                 "sources_gathered": state.sources_gathered + [sources_str],
                 "research_loop_count": state.research_loop_count + 1,
                 "vector_search_results": state.vector_search_results + [search_str],
-                "retrieved_chunks": state.retrieved_chunks + similar_chunks
+                "retrieved_chunks": state.retrieved_chunks + similar_chunks,
             }
             
         except Exception as e:

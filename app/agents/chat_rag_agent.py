@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.services.embedding_service import embedding_service
+from app.tools import vector_search_tool
 from app.database.models import Document, ChatSession, ChatMessage
 from app.database.connection import get_db_session
 from app.prompts.chat_agent import FINANCIAL_ANALYST_SYSTEM_PROMPT, RAG_CONTEXT_TEMPLATE
@@ -217,13 +218,14 @@ class ChatRAGAgent:
         try:
             logger.info("Retrieving relevant information for chat")
             
-            # Search for relevant chunks
-            similar_chunks = await embedding_service.search_similar_chunks(
+            # Search for relevant chunks via reusable tool
+            search_result = await vector_search_tool.search(
                 query=state.message,
                 document_id=state.document_id,
                 top_k=8,
-                similarity_threshold=0.6
+                similarity_threshold=0.6,
             )
+            similar_chunks = search_result.get("similar_chunks", [])
             
             state.retrieved_chunks = similar_chunks
             
