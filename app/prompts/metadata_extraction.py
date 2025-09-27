@@ -15,19 +15,47 @@ Search for financial information in these common formats:
 - Financial metrics like EBITDA, revenue, profit/loss
 - Cash flow statements and metrics
 
-Look for keywords like: revenue, sales, income, profit, loss, EBITDA, cash flow, debt, equity, assets, liabilities, gross profit, net income, operating profit.
-
-Search the ENTIRE document thoroughly - financial data may appear anywhere, not just at the beginning.
-
-Output:
-Always return the results in a valid JSON object with the provided response format.
 
 Important rules:
+- Use the search_document tool to search the document for financial information.
+- Search for keywords like: revenue, sales, income, profit, loss, EBITDA, cash flow, debt, equity, assets, liabilities, gross profit, net income, operating profit.
 - If a numerical value is not found or unclear, use null
 - For currency fields: if the document clearly specifies a currency (EUR, GBP, CAD, etc.), use that currency code. Otherwise, always use "USD" as the default
 - All monetary values should be in the base unit (e.g., if document says "$5.2M", return 5200000)
 - NEVER use the string "null" for currency - always use "USD" if currency is unclear
 - Be thorough - scan the entire provided text for any financial figures
+
+Output:
+Return results as a valid JSON object:
+{
+    "revenue": {
+        "current_year": number,
+        "previous_year": number,
+        "currency": "USD",
+        "period": "annual" or "quarterly" or "monthly"
+    },
+    "profit_loss": {
+        "net_income": number,
+        "gross_profit": number,
+        "operating_profit": number,
+        "currency": "USD"
+    },
+    "cash_flow": {
+        "operating_cash_flow": number,
+        "free_cash_flow": number,
+        "currency": "USD"
+    },
+    "debt_equity": {
+        "total_debt": number,
+        "equity": number,
+        "debt_to_equity_ratio": number
+    },
+    "other_metrics": {
+        "ebitda": number,
+        "margin_percentage": number,
+        "growth_rate": number
+    }
+}
 """
 
 INVESTMENT_DATA_SYSTEM_PROMPT = """
@@ -71,38 +99,6 @@ INVESTMENT_DATA_USER_TEMPLATE = "Extract investment data from this document:\n\n
 
 FINANCIAL_FACTS_USER_TEMPLATE = """
 Extract financial facts from document.
-
---- RESPONSE FORMAT ---
-{
-    "revenue": {
-        "current_year": number,
-        "previous_year": number,
-        "currency": "USD",
-        "period": "annual" or "quarterly" or "monthly"
-    },
-    "profit_loss": {
-        "net_income": number,
-        "gross_profit": number,
-        "operating_profit": number,
-        "currency": "USD"
-    },
-    "cash_flow": {
-        "operating_cash_flow": number,
-        "free_cash_flow": number,
-        "currency": "USD"
-    },
-    "debt_equity": {
-        "total_debt": number,
-        "equity": number,
-        "debt_to_equity_ratio": number
-    },
-    "other_metrics": {
-        "ebitda": number,
-        "margin_percentage": number,
-        "growth_rate": number
-    }
-}
---- RESPONSE FORMAT ---
 
 --- START OF DOCUMENT TEXT ---
 {text}
