@@ -34,6 +34,9 @@ class Document(Base):
     investment_data = Column(JSON)  # Store investment-related information
     key_metrics = Column(JSON)      # Store key financial metrics
     
+    # Extracted content
+    extracted_images = Column(JSON)  # Store extracted images and captions
+
     # Processing status
     is_processed = Column(Boolean, default=False)
     is_embedded = Column(Boolean, default=False)

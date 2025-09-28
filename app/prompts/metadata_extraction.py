@@ -17,13 +17,13 @@ Search for financial information in these common formats:
 
 
 Important rules:
-- Use the search_document tool to search the document for financial information.
+- Be thorough - scan the entire provided text and all attached images for any financial figures
 - Search for keywords like: revenue, sales, income, profit, loss, EBITDA, cash flow, debt, equity, assets, liabilities, gross profit, net income, operating profit.
+- If you find a financial figure in an image or text, use the search_document tool to search the document for more information about that figure.
 - If a numerical value is not found or unclear, use null
 - For currency fields: if the document clearly specifies a currency (EUR, GBP, CAD, etc.), use that currency code. Otherwise, always use "USD" as the default
 - All monetary values should be in the base unit (e.g., if document says "$5.2M", return 5200000)
 - NEVER use the string "null" for currency - always use "USD" if currency is unclear
-- Be thorough - scan the entire provided text for any financial figures
 
 Output:
 Return results as a valid JSON object:

@@ -8,7 +8,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, END
 from pydantic import BaseModel, Field
 
@@ -40,6 +40,7 @@ class ExtractionState(BaseModel):
     investment_data: Optional[Dict[str, Any]] = None
     key_metrics: Optional[Dict[str, Any]] = None
     document_structure: Optional[Dict[str, Any]] = None
+    document_images: Optional[List[Dict[str, Any]]] = None
     errors: List[str] = Field(default_factory=list)
     current_step: str = "start"
 
@@ -49,7 +50,7 @@ class MetadataExtractor:
 
     def __init__(self) -> None:
         self.llm = ChatOpenAI(
-            model=settings.OPENAI_MODEL,
+            model="gpt-4.1-nano-2025-04-14",
             temperature=0.0,
             openai_api_key=settings.OPENAI_API_KEY,
         )
@@ -88,11 +89,18 @@ class MetadataExtractor:
     async def _load_document_text(self, state: ExtractionState) -> ExtractionState:
         try:
             with get_db_session() as db:
+                document = db.query(Document).filter(Document.id == state.document_id).first()
+                if not document:
+                    raise FileNotFoundError("Document not found in database")
+                
                 chunks = db.query(DocumentChunk).filter(
                     DocumentChunk.document_id == state.document_id
                 ).order_by(DocumentChunk.chunk_index).all()
+                
                 state.full_text = "\n\n".join([c.content for c in chunks])
                 state.chunk_count = len(chunks)
+                state.document_images = document.extracted_images or []
+                
             state.document_structure = self._extract_document_structure(state.full_text or "")
             state.current_step = "loaded_text"
             return state
@@ -112,12 +120,20 @@ class MetadataExtractor:
                 max_tokens_per_source=800,
             )
 
-            retrieved_context = vs.get("formatted_results", "")
+            retrieved_chunks = vs.get("similar_chunks", [])
+            relevant_images = state.document_images
+            
+            chunk_messages = [{"type": "text", "text": f"\n---\nChunk from page {chunk['page_number']} with similarity score {chunk['similarity_score']}:\n{chunk['content']}\n---"} for chunk in retrieved_chunks]
+            image_messages = [{"type": "image_url", "image_url": {"url": img["image_uri"], "detail": "high"}} for img in relevant_images if img["image_uri"] is not None]
 
-            system = FINANCIAL_FACTS_SYSTEM_PROMPT
-            user = FINANCIAL_FACTS_USER_TEMPLATE.format(text=retrieved_context)
+            # Build multimodal message content
+            content = [
+                {"type": "text", "text": "Task: look for financial figures in the image and the chunks"},
+                *image_messages,
+                *chunk_messages,
+            ]
 
-            messages = [SystemMessage(content=system), { 'role': 'user', 'content': user }]
+            messages = [SystemMessage(content=FINANCIAL_FACTS_SYSTEM_PROMPT), HumanMessage(content=content)]
             response = await self.llm.ainvoke(messages)
 
             raw = (response.content or "").strip()
@@ -180,7 +196,7 @@ class MetadataExtractor:
             return state
 
     # --------------------
-    # Helper methods
+    # Helpers
     # --------------------
     def _ensure_json_serializable(self, data: Any) -> Any:
         try:

@@ -39,6 +39,7 @@ class DocumentProcessor:
         # Configure docling pipeline options for better financial document processing
         self.pipeline_options = PdfPipelineOptions()
         self.pipeline_options.do_ocr = True  # Enable OCR for scanned documents
+        self.pipeline_options.generate_picture_images=True # Enable picture extraction
         self.pipeline_options.do_table_structure = True  # Extract table structure
         self.pipeline_options.table_structure_options.do_cell_matching = True
         
@@ -126,6 +127,9 @@ class DocumentProcessor:
         # Extract tables if present
         tables = self._extract_tables(doc)
         
+        # Extract images
+        images = self._extract_images(doc)
+        
         # Store results in database
         with get_db_session() as db:
             # Update document metadata
@@ -135,6 +139,7 @@ class DocumentProcessor:
                 document.word_count = metadata.get('word_count', 0)
                 document.is_processed = True
                 document.processing_error = None
+                document.extracted_images = images
                 
                 # Store document chunks
                 for i, chunk_data in enumerate(chunks):
@@ -154,7 +159,8 @@ class DocumentProcessor:
             'chunk_count': len(chunks),
             'tables': tables,
             'full_text_length': len(full_text),
-            'processing_status': 'completed'
+            'processing_status': 'completed',
+            'image_count': len(images)
         }
     
     def _extract_document_metadata(self, doc) -> Dict[str, Any]:
@@ -264,6 +270,32 @@ class DocumentProcessor:
         
         return tables
     
+    def _extract_images(self, doc) -> List[Dict[str, Any]]:
+        """Extract images and their captions from the document."""
+        images = []
+        if not hasattr(doc, 'pictures'):
+            return images
+        
+        for i, pic in enumerate(doc.pictures):
+            try:
+                image_data = {
+                    'picture_id': i,
+                    'image_uri': str(pic.image.uri) if pic.image else None,
+                    'caption': pic.caption_text(doc=doc) or f"Image {i+1}",
+                }
+                
+                # Try to get page number, handle potential issues
+                if hasattr(pic, 'page_refs') and pic.page_refs:
+                    image_data['page_number'] = pic.page_refs[0]
+                else:
+                    image_data['page_number'] = None
+
+                images.append(image_data)
+            except Exception as e:
+                logger.warning(f"Could not extract image {i}: {e}")
+        
+        return images
+
     def _estimate_token_count(self, text: str) -> int:
         """Estimate token count (rough approximation: 4 characters per token)."""
         return len(text) // 4
