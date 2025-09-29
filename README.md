@@ -30,7 +30,7 @@ A comprehensive AI system for uploading, processing, and researching financial d
 ### 1. Clone Repository
 ```bash
 git clone <repository-url>
-cd financial-document-ai
+cd doc-agent
 ```
 
 ### 2. Install Dependencies
@@ -39,24 +39,29 @@ pip install -r requirements.txt
 ```
 
 ### 3. Set Up Environment Variables
-Copy the example environment file and configure your API keys:
+Create a `.env` file in the project root and configure your keys and settings. These variables are required for both local runs and Docker.
 
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your configuration:
 ```env
 # Database Configuration
-DATABASE_URL=postgresql://user:password@localhost:5432/financial_docs
+# Use Postgres (recommended) or SQLite for local only
+DATABASE_URL=postgresql://doc_agent:doc_agent_password@localhost:5432/financial_docs
+# Example SQLite (for quick local runs):
+# DATABASE_URL=sqlite:///./test_doc_processing.db
 
-# OpenAI Configuration
+# OpenAI Configuration (required)
 OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_MODEL=gpt-4-1106-preview
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 
-# Pinecone Configuration
+# Pinecone Configuration (required)
 PINECONE_API_KEY=your_pinecone_api_key_here
-PINECONE_ENVIRONMENT=gcp-starter
 PINECONE_INDEX_NAME=financial-documents
+PINECONE_DIMENSION=1536
+
+# LangSmith (required for current configuration)
+LANGSMITH_API_KEY=your_langsmith_api_key_here
+LANGSMITH_PROJECT=doc-agent
+LANGSMITH_TRACING=true
 
 # Application Configuration
 DEBUG=false
@@ -83,6 +88,95 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 The API will be available at `http://localhost:8000`
+
+## 🧑‍💻 Running From Source (Full Stack)
+
+This runs the backend (FastAPI) and frontend (Next.js) locally.
+
+### Prerequisites
+- Python 3.11+
+- Node.js 18+
+- pnpm (recommended) or npm
+- PostgreSQL 15+ (or set `DATABASE_URL` to SQLite for local only)
+
+### 1) Backend
+- Create and activate a virtual environment (optional but recommended)
+  ```bash
+  python -m venv .venv
+  source .venv/bin/activate
+  ```
+- Install dependencies
+  ```bash
+  pip install -r requirements.txt
+  ```
+- Ensure your database is running and `DATABASE_URL` is set in `.env`
+- Start the API
+  ```bash
+  uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+  ```
+
+### 2) Frontend
+- In a new terminal, install dependencies and start the dev server
+  ```bash
+  cd client
+  pnpm install
+  # Ensure the API URL points to your backend
+  echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
+  pnpm dev
+  ```
+
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:8000` (docs at `/docs`)
+
+Tip: To run the backend against SQLite for quick local testing, set `DATABASE_URL=sqlite:///./test_doc_processing.db` in `.env`.
+
+## 🐳 Run with Docker and Makefile
+
+This project includes a Makefile and Compose setup for easy Docker-based runs.
+
+### Prerequisites
+- Docker and Docker Compose
+- A `.env` file in the project root with the variables shown above
+
+### Quick start (development, with hot reload)
+```bash
+make dev
+```
+Services:
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:8000` (health at `/health`, docs at `/docs`)
+- Postgres: `localhost:5432` (credentials set in `docker-compose.yml`)
+
+### Production-like run
+```bash
+make build
+make start
+```
+
+### Useful commands
+```bash
+make help         # list available commands
+make logs         # tail logs for all services
+make logs-backend # tail backend logs
+make logs-frontend# tail frontend logs
+make status       # service status and resource usage
+make health       # quick health checks for services
+make stop         # stop all services
+make clean        # stop and remove volumes (DANGER: deletes data)
+```
+
+### Without make
+```bash
+# Development (hot reload)
+docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+# Production-like
+docker-compose up -d --build
+```
+
+Notes:
+- Compose reads your root `.env` for required keys (`OPENAI_API_KEY`, `PINECONE_API_KEY`, `LANGSMITH_API_KEY`, etc.).
+- Uploads are persisted to the local `./uploads` directory.
 
 ## 🔧 API Usage
 

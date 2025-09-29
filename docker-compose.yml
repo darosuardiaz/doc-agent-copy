@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: doc-agent-postgres
+    environment:
+      POSTGRES_DB: financial_docs
+      POSTGRES_USER: doc_agent
+      POSTGRES_PASSWORD: doc_agent_password
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U doc_agent -d financial_docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - doc-agent-network
+
+  # Python Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: doc-agent-backend
+    environment:
+      - DATABASE_URL=postgresql://doc_agent:doc_agent_password@postgres:5432/financial_docs
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4-1106-preview}
+      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_INDEX_NAME=${PINECONE_INDEX_NAME:-financial-documents}
+      - PINECONE_DIMENSION=${PINECONE_DIMENSION:-1536}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-doc-agent}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-true}
+      - DEBUG=${DEBUG:-false}
+      - UPLOAD_DIRECTORY=/app/uploads
+      - PYTHONPATH=/app
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./app:/app/app
+      - ./tests:/app/tests
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - doc-agent-network
+    restart: unless-stopped
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile.frontend
+    container_name: doc-agent-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NODE_ENV=production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - doc-agent-network
+    restart: unless-stopped
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: doc-agent-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - doc-agent-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  doc-agent-network:
+    driver: bridge

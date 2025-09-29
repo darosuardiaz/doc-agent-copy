@@ -9,14 +9,12 @@ import json
 
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
-from langchain.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
-from app.services.embedding_service import embedding_service
 from app.tools import vector_search_tool
-from app.database.models import Document, ResearchTask
+from app.database.models import ResearchTask
 from app.database.connection import get_db_session
 
 settings = get_settings()
@@ -99,6 +97,14 @@ Focus on:
 - Strategic insights and implications
 - Investment highlights and risks
 - Specific facts and figures from the source material
+
+FORMATTING REQUIREMENTS:
+- Format your response in clean, well-structured Markdown
+- Use appropriate headings (## for main sections, ### for subsections)
+- Use bullet points for lists of key points
+- Use **bold** for important metrics and figures
+- Use *italics* for emphasis where appropriate
+- Include tables using markdown syntax for financial data when relevant
 
 Be specific and cite information accurately."""
 
@@ -209,14 +215,16 @@ class DeepResearchAgent:
             self, 
             document_id: str, 
             topic: str, 
-            custom_query: Optional[str] = None
+            custom_query: Optional[str] = None,
+            task_id: Optional[str] = None
         ) -> Dict[str, Any]:
         """Conduct deep research on a document for a specific topic."""
         try:
             logger.info(f"Starting deep research for document {document_id}, topic: {topic}")
             
-            # Create research task in database
-            task_id = await self._create_research_task(document_id, topic, custom_query or topic)
+            # Create research task in database if not provided
+            if not task_id:
+                task_id = await self._create_research_task(document_id, topic, custom_query or topic)
             
             # Initialize research state
             initial_state = ResearchStateInput(
@@ -240,19 +248,27 @@ class DeepResearchAgent:
                 errors = final_state.errors
                 retrieved_chunks = final_state.retrieved_chunks
 
-            # Derive structured sources {page, chunk} from retrieved chunks (deduplicated)
+            # Deduplicate sources and format them
             seen_pairs = set()
             structured_sources = []
             for ch in retrieved_chunks or []:
                 page = ch.get('page_number')
-                chunk_idx = ch.get('chunk_index')
-                if page is None or chunk_idx is None:
+                content = ch.get('content')
+                relevance_score = ch.get('similarity_score')
+                
+                if page is None or content is None or relevance_score is None:
                     continue
-                pair = (page, chunk_idx)
+                
+                pair = (page, content[:50]) # Use a preview of content to deduplicate
                 if pair in seen_pairs:
                     continue
                 seen_pairs.add(pair)
-                structured_sources.append({"page": page, "chunk": chunk_idx})
+                
+                structured_sources.append({
+                    "page": page, 
+                    "content": content,
+                    "relevance_score": relevance_score
+                })
             
             # Update database with results
             await self._update_research_task(

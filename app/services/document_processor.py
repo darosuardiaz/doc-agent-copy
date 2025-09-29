@@ -8,13 +8,10 @@ from pathlib import Path
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
-# Set environment variable to force CPU usage for docling models (fixes MPS compatibility issues)
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
-os.environ["TORCH_DEVICE"] = "cpu"
-
 from docling.document_converter import DocumentConverter
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.datamodel.pipeline_options import PdfPipelineOptions, PictureDescriptionApiOptions
+from docling_core.types.doc.document import ImageRefMode
 from docling.document_converter import PdfFormatOption
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document as LangchainDocument
@@ -22,6 +19,14 @@ from langchain_core.documents import Document as LangchainDocument
 from app.config import get_settings
 from app.database.models import Document, DocumentChunk
 from app.database.connection import get_db_session
+
+# Force CPU usage to avoid MPS compatibility issues on macOS
+import torch
+torch.set_default_device('cpu')
+
+# Set environment variable to force CPU usage for docling models (fixes MPS compatibility issues)
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+os.environ["TORCH_DEVICE"] = "cpu"
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -32,15 +37,19 @@ class DocumentProcessor:
     
     def __init__(self):
         """Initialize the document processor."""
-        # Force CPU usage to avoid MPS compatibility issues on macOS
-        import torch
-        torch.set_default_device('cpu')
-        
-        # Configure docling pipeline options for better financial document processing
         self.pipeline_options = PdfPipelineOptions()
         self.pipeline_options.do_ocr = True  # Enable OCR for scanned documents
         self.pipeline_options.do_table_structure = True  # Extract table structure
         self.pipeline_options.table_structure_options.do_cell_matching = True
+        self.pipeline_options.generate_picture_images=True # Enable picture extraction
+        self.pipeline_options.do_picture_description=True # Enable picture description
+        self.pipeline_options.picture_description_options=PictureDescriptionApiOptions()
+        self.pipeline_options.picture_description_options.url = "https://api.openai.com/v1/chat/completions"
+        self.pipeline_options.picture_description_options.prompt = "Describe this image in sentences in a single paragraph. Include reference numerical values in the description."
+        self.pipeline_options.picture_description_options.params = {"model": settings.OPENAI_MODEL}
+        self.pipeline_options.picture_description_options.headers = {"Authorization": f"Bearer {settings.OPENAI_API_KEY}"}
+        self.pipeline_options.picture_description_options.timeout = 60
+        self.pipeline_options.enable_remote_services=True
         
         # Initialize document converter with optimized settings
         self.converter = DocumentConverter(
@@ -118,13 +127,16 @@ class DocumentProcessor:
         metadata = self._extract_document_metadata(doc)
         
         # Get full text content
-        full_text = doc.export_to_markdown()
+        full_text = doc.export_to_markdown(mark_annotations=True, include_annotations=True)
         
         # Create text chunks
         chunks = self._create_text_chunks(full_text, document_id)
         
         # Extract tables if present
         tables = self._extract_tables(doc)
+        
+        # Extract images
+        images = self._extract_images(doc)
         
         # Store results in database
         with get_db_session() as db:
@@ -135,6 +147,7 @@ class DocumentProcessor:
                 document.word_count = metadata.get('word_count', 0)
                 document.is_processed = True
                 document.processing_error = None
+                document.extracted_images = images
                 
                 # Store document chunks
                 for i, chunk_data in enumerate(chunks):
@@ -154,7 +167,8 @@ class DocumentProcessor:
             'chunk_count': len(chunks),
             'tables': tables,
             'full_text_length': len(full_text),
-            'processing_status': 'completed'
+            'processing_status': 'completed',
+            'image_count': len(images)
         }
     
     def _extract_document_metadata(self, doc) -> Dict[str, Any]:
@@ -257,13 +271,62 @@ class DocumentProcessor:
                         except Exception as e:
                             logger.warning(f"Could not export table {i} to dataframe: {e}")
                     
-                    tables.append(table_data)
-                    
+                    tables.append(table_data)              
         except Exception as e:
             logger.warning(f"Error extracting tables: {str(e)}")
         
         return tables
     
+    def _extract_images(self, doc) -> List[Dict[str, Any]]:
+        """Extract images and their captions from the document."""
+        images = []
+        if not hasattr(doc, 'pictures'):
+            return images
+        
+        for i, pic in enumerate(doc.pictures):
+            try:
+                # Extract caption
+                caption = None
+                try:
+                    caption = pic.caption_text(doc=doc)
+                except Exception as e:
+                    logger.warning(f"Error extracting caption for image {i}: {e}")
+                
+                # Get page number from provenance information
+                page_number = None
+                if hasattr(pic, 'prov') and pic.prov:
+                    page_number = pic.prov[0].page_no
+                else:
+                    logger.warning(f"Could not find page number for image {i}")
+                
+                # Clean and validate caption
+                if caption:
+                    caption = caption.strip()
+                    if not caption:  # Empty after stripping
+                        caption = None
+                
+                # Generate fallback caption if needed
+                if not caption:
+                    if page_number:
+                        caption = f"Image {i+1} (page {page_number})"
+                    else:
+                        caption = f"Image {i+1}"
+                
+                image_data = {
+                    'picture_id': i,
+                    'image_uri': str(pic.image.uri) if pic.image else None,
+                    'caption': caption,
+                    'page_number': page_number,
+                }
+
+                images.append(image_data)                
+            except Exception as e:
+                logger.warning(f"Could not extract image {i}: {e}")
+                pass
+        
+        logger.info(f"Successfully extracted {len(images)} images with captions and page numbers")
+        return images
+
     def _estimate_token_count(self, text: str) -> int:
         """Estimate token count (rough approximation: 4 characters per token)."""
         return len(text) // 4
