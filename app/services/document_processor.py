@@ -278,22 +278,59 @@ class DocumentProcessor:
         
         for i, pic in enumerate(doc.pictures):
             try:
+                # Extract caption using docling's built-in method
+                caption = None
+                try:
+                    caption = pic.caption_text(doc=doc)
+                except Exception as e:
+                    logger.warning(f"Error extracting caption for image {i}: {e}")
+                
+                # Get page number from provenance information
+                page_number = None
+                if hasattr(pic, 'prov') and pic.prov:
+                    # prov is a list of ProvenanceItem objects, get page_no from the first one
+                    page_number = pic.prov[0].page_no
+                else:
+                    logger.warning(f"Could not find page number for image {i}")
+                
+                # Clean and validate caption
+                if caption:
+                    caption = caption.strip()
+                    if not caption:  # Empty after stripping
+                        caption = None
+                
+                # Generate fallback caption if needed
+                if not caption:
+                    if page_number:
+                        caption = f"Image {i+1} (page {page_number})"
+                    else:
+                        caption = f"Image {i+1}"
+                
                 image_data = {
                     'picture_id': i,
                     'image_uri': str(pic.image.uri) if pic.image else None,
-                    'caption': pic.caption_text(doc=doc) or f"Image {i+1}",
+                    'caption': caption,
+                    'page_number': page_number,
                 }
-                
-                # Try to get page number, handle potential issues
-                if hasattr(pic, 'page_refs') and pic.page_refs:
-                    image_data['page_number'] = pic.page_refs[0]
-                else:
-                    image_data['page_number'] = None
 
                 images.append(image_data)
+                logger.debug(f"Extracted image {i}: page {page_number}, caption length: {len(caption)}")
+                
             except Exception as e:
                 logger.warning(f"Could not extract image {i}: {e}")
+                # Add a basic entry even if extraction fails
+                try:
+                    fallback_caption = f"Image {i+1} (extraction failed)"
+                    images.append({
+                        'picture_id': i,
+                        'image_uri': None,
+                        'caption': fallback_caption,
+                        'page_number': None,
+                    })
+                except Exception:
+                    pass  # Skip if we can't even add a fallback
         
+        logger.info(f"Successfully extracted {len(images)} images with captions and page numbers")
         return images
 
     def _estimate_token_count(self, text: str) -> int:
