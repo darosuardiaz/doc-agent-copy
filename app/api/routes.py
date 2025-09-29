@@ -132,6 +132,62 @@ async def process_document_pipeline(document_id: str, file_path: str):
                 document.processing_error = f"Pipeline error: {str(e)}"
 
 
+async def run_research_background(
+    task_id: str, 
+    document_id: str, 
+    topic: str, 
+    custom_query: Optional[str]
+):
+    """Background task for running research and updating the task status."""
+    try:
+        logger.info(f"Starting background research for task {task_id}")
+        
+        # Update task status to in_progress
+        from app.database.connection import get_db_session
+        with get_db_session() as db:
+            task = db.query(ResearchTask).filter(ResearchTask.id == task_id).first()
+            if task:
+                task.status = "in_progress"
+                db.commit()
+        
+        # Run the research
+        start_time = asyncio.get_event_loop().time()
+        result = await deep_research_agent.conduct_research(
+            document_id=document_id,
+            topic=topic,
+            custom_query=custom_query,
+            task_id=task_id
+        )
+        processing_time = asyncio.get_event_loop().time() - start_time
+        
+        # Update task with results
+        with get_db_session() as db:
+            task = db.query(ResearchTask).filter(ResearchTask.id == task_id).first()
+            if task:
+                task.status = "completed"
+                task.content_outline = {"summary": result.get('summary', '')}
+                task.research_findings = {"summary": result.get('summary', '')}
+                task.sources_used = result.get('sources', [])
+                task.processing_time = processing_time
+                task.completed_at = datetime.utcnow()
+                db.commit()
+                
+        logger.info(f"Background research completed for task {task_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in background research for task {task_id}: {str(e)}")
+        
+        # Update task with error status
+        from app.database.connection import get_db_session
+        with get_db_session() as db:
+            task = db.query(ResearchTask).filter(ResearchTask.id == task_id).first()
+            if task:
+                task.status = "failed"
+                task.error_message = str(e)
+                task.completed_at = datetime.utcnow()
+                db.commit()
+
+
 @router.get("/documents", response_model=List[schemas.DocumentSummary])
 def list_documents(
     skip: int = 0,
@@ -218,8 +274,9 @@ def get_document_status(
 
 
 # Deep Research endpoints
-@router.post("/documents/{document_id}/research/start", response_model=schemas.ResearchResponse)
+@router.post("/documents/{document_id}/research/start", response_model=schemas.ResearchTask)
 async def start_research(
+    background_tasks: BackgroundTasks,
     request: schemas.ResearchRequestBody,
     document_id: str = Depends(validate_document_id),
     db: Session = Depends(get_database)
@@ -227,7 +284,8 @@ async def start_research(
     """
     Start a deep research task for a document.
     
-    This creates a comprehensive content outline and analysis for the specified topic.
+    This creates a research task in the database and starts background processing.
+    Returns the task immediately for tracking.
     """
     try:
         # Validate document exists and is processed
@@ -244,22 +302,31 @@ async def start_research(
                 detail="Document must be fully processed and embedded before research"
             )
         
-        # Conduct research
-        start_time = asyncio.get_event_loop().time()
-        result = await deep_research_agent.conduct_research(
-            document_id=str(document_id),
+        # Create research task in database
+        task = ResearchTask(
+            document_id=document_id,
             topic=request.topic,
-            custom_query=request.custom_query
+            research_query=request.custom_query or request.topic,
+            status="pending",
+            model_used=settings.OPENAI_MODEL
         )
-        processing_time = asyncio.get_event_loop().time() - start_time
         
-        return schemas.ResearchResponse(
-            task_id=result['task_id'],
-            content_outline={"summary": result['summary']},
-            research_findings={"summary": result['summary']},
-            sources_used=result['sources'],
-            processing_time=processing_time
+        db.add(task)
+        db.commit()
+        db.refresh(task)
+        
+        # Start background research processing
+        background_tasks.add_task(
+            run_research_background,
+            str(task.id),
+            str(document_id),
+            request.topic,
+            request.custom_query
         )
+        
+        logger.info(f"Research task {task.id} created and started for document {document_id}")
+        
+        return task
         
     except HTTPException:
         raise
@@ -465,6 +532,26 @@ def list_chat_sessions(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error listing chat sessions: {str(e)}"
+        )
+
+
+# System health endpoint
+@router.get("/health")
+async def health_check():
+    """Health check endpoint for Docker and monitoring."""
+    try:
+        # Basic health check - could be expanded to check database, external services, etc.
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "service": "AI Financial Document Processing System",
+            "version": "1.0.0"
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service unavailable"
         )
 
 

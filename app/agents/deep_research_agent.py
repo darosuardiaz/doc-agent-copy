@@ -98,6 +98,14 @@ Focus on:
 - Investment highlights and risks
 - Specific facts and figures from the source material
 
+FORMATTING REQUIREMENTS:
+- Format your response in clean, well-structured Markdown
+- Use appropriate headings (## for main sections, ### for subsections)
+- Use bullet points for lists of key points
+- Use **bold** for important metrics and figures
+- Use *italics* for emphasis where appropriate
+- Include tables using markdown syntax for financial data when relevant
+
 Be specific and cite information accurately."""
 
 REFLECTION_INSTRUCTIONS = """You are analyzing a research summary to identify knowledge gaps.
@@ -207,14 +215,16 @@ class DeepResearchAgent:
             self, 
             document_id: str, 
             topic: str, 
-            custom_query: Optional[str] = None
+            custom_query: Optional[str] = None,
+            task_id: Optional[str] = None
         ) -> Dict[str, Any]:
         """Conduct deep research on a document for a specific topic."""
         try:
             logger.info(f"Starting deep research for document {document_id}, topic: {topic}")
             
-            # Create research task in database
-            task_id = await self._create_research_task(document_id, topic, custom_query or topic)
+            # Create research task in database if not provided
+            if not task_id:
+                task_id = await self._create_research_task(document_id, topic, custom_query or topic)
             
             # Initialize research state
             initial_state = ResearchStateInput(

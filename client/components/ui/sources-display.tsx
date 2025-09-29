@@ -20,6 +20,9 @@ export function SourcesDisplay({ sources, className = "", showBorder = false }: 
     return null
   }
 
+  // Sort sources by relevance score in descending order (highest relevance first)
+  const sortedSources = [...sources].sort((a, b) => b.relevance_score - a.relevance_score)
+
   return (
     <div className={`${showBorder ? "mt-4 pt-3 border-t border-gray-200" : ""} ${className}`}>
       <div className="flex items-center gap-2 mb-2">
@@ -27,7 +30,7 @@ export function SourcesDisplay({ sources, className = "", showBorder = false }: 
         <span className="text-sm font-medium text-muted-foreground">Sources Used</span>
       </div>
       <div className="space-y-2">
-        {sources.map((source, index) => (
+        {sortedSources.map((source, index) => (
           <div key={index} className="relative group inline-block">
             <Badge variant="outline" className="text-xs cursor-pointer">
               Page {source.page}

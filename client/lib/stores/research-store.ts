@@ -6,7 +6,7 @@ export interface ResearchTask {
   id: string
   document_id: string
   topic: string
-  custom_query?: string
+  research_query: string
   status: "pending" | "in_progress" | "completed" | "failed"
   content_outline?: Record<
     string,
@@ -23,9 +23,11 @@ export interface ResearchTask {
     content: string
     relevance_score: number
   }>
+  processing_time?: number
+  model_used?: string
+  error_message?: string
   created_at: string
   completed_at?: string
-  processing_time?: number
 }
 
 interface ResearchState {
@@ -33,6 +35,7 @@ interface ResearchState {
   currentTask: ResearchTask | null
   isLoading: boolean
   error: string | null
+  pollingIntervals: Map<string, NodeJS.Timeout>
 
   // Actions
   setTasks: (tasks: ResearchTask[]) => void
@@ -47,6 +50,11 @@ interface ResearchState {
   startResearch: (documentId: string, topic: string, customQuery?: string) => Promise<string>
   fetchTasks: (documentId: string) => Promise<void>
   fetchTask: (documentId: string, taskId: string) => Promise<void>
+  
+  // Polling Actions
+  startPolling: (documentId: string, taskId: string) => void
+  stopPolling: (taskId: string) => void
+  stopAllPolling: () => void
 }
 
 export const useResearchStore = create<ResearchState>()(
@@ -56,6 +64,7 @@ export const useResearchStore = create<ResearchState>()(
       currentTask: null,
       isLoading: false,
       error: null,
+      pollingIntervals: new Map(),
 
       setTasks: (tasks) => set({ tasks }),
       setCurrentTask: (task) => set({ currentTask: task }),
@@ -79,25 +88,16 @@ export const useResearchStore = create<ResearchState>()(
       startResearch: async (documentId: string, topic: string, customQuery?: string) => {
         set({ isLoading: true, error: null })
         try {
-          const result = await api.research.start(documentId, topic, customQuery)
+          const task = await api.research.start(documentId, topic, customQuery)
 
-          const newTask: ResearchTask = {
-            id: result.task_id,
-            document_id: documentId,
-            topic,
-            custom_query: customQuery,
-            status: "completed",
-            content_outline: result.content_outline,
-            research_findings: result.research_findings,
-            sources_used: result.sources_used,
-            created_at: new Date().toISOString(),
-            completed_at: new Date().toISOString(),
-            processing_time: result.processing_time,
-          }
-
-          get().addTask(newTask)
-          set({ currentTask: newTask, isLoading: false })
-          return result.task_id
+          // Add the new task to the store
+          get().addTask(task)
+          set({ currentTask: task, isLoading: false })
+          
+          // Start polling for this task
+          get().startPolling(documentId, task.id)
+          
+          return task.id
         } catch (error) {
           set({ error: (error as Error).message, isLoading: false })
           throw error
@@ -115,13 +115,52 @@ export const useResearchStore = create<ResearchState>()(
       },
 
       fetchTask: async (documentId: string, taskId: string) => {
-        set({ isLoading: true, error: null })
         try {
           const task = await api.research.getTask(documentId, taskId)
-          set({ currentTask: task, isLoading: false })
+          get().updateTask(taskId, task)
+          
+          // If current task, update it
+          if (get().currentTask?.id === taskId) {
+            set({ currentTask: task })
+          }
+          
+          // Stop polling if task is completed or failed
+          if (task.status === 'completed' || task.status === 'failed') {
+            get().stopPolling(taskId)
+          }
         } catch (error) {
-          set({ error: (error as Error).message, isLoading: false })
+          console.error('Error fetching task:', error)
         }
+      },
+
+      startPolling: (documentId: string, taskId: string) => {
+        // Clear existing interval if any
+        get().stopPolling(taskId)
+        
+        const interval = setInterval(async () => {
+          await get().fetchTask(documentId, taskId)
+        }, 2000) // Poll every 2 seconds
+        
+        set((state) => ({
+          pollingIntervals: new Map(state.pollingIntervals.set(taskId, interval))
+        }))
+      },
+
+      stopPolling: (taskId: string) => {
+        const interval = get().pollingIntervals.get(taskId)
+        if (interval) {
+          clearInterval(interval)
+          set((state) => {
+            const newIntervals = new Map(state.pollingIntervals)
+            newIntervals.delete(taskId)
+            return { pollingIntervals: newIntervals }
+          })
+        }
+      },
+
+      stopAllPolling: () => {
+        get().pollingIntervals.forEach((interval) => clearInterval(interval))
+        set({ pollingIntervals: new Map() })
       },
     }),
     { name: "research-store" },

@@ -3,7 +3,7 @@
 import { useEffect } from "react"
 import { useResearchStore } from "@/lib/stores/research-store"
 import { ResearchResult } from "./research-result"
-import { RefreshCw, Search } from "lucide-react"
+import { RefreshCw, Search, Activity } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface ResearchListProps {
@@ -11,13 +11,20 @@ interface ResearchListProps {
 }
 
 export function ResearchList({ documentId }: ResearchListProps) {
-  const { tasks, isLoading, error, fetchTasks } = useResearchStore()
+  const { tasks, isLoading, error, fetchTasks, stopAllPolling, pollingIntervals } = useResearchStore()
 
   useEffect(() => {
     if (documentId) {
       fetchTasks(documentId)
     }
   }, [documentId])
+
+  // Cleanup polling when component unmounts or documentId changes
+  useEffect(() => {
+    return () => {
+      stopAllPolling()
+    }
+  }, [documentId, stopAllPolling])
 
   const handleRefresh = () => {
     if (documentId) {
@@ -26,6 +33,10 @@ export function ResearchList({ documentId }: ResearchListProps) {
   }
 
   const filteredTasks = documentId ? tasks.filter((task) => task.document_id === documentId) : tasks
+  const hasActivePolling = pollingIntervals.size > 0
+  const pendingOrInProgressTasks = filteredTasks.filter(task => 
+    task.status === 'pending' || task.status === 'in_progress'
+  ).length
 
   if (isLoading && filteredTasks.length === 0) {
     return (
@@ -71,9 +82,17 @@ export function ResearchList({ documentId }: ResearchListProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          {filteredTasks.length} research task{filteredTasks.length !== 1 ? "s" : ""} found
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-muted-foreground">
+            {filteredTasks.length} research task{filteredTasks.length !== 1 ? "s" : ""} found
+          </p>
+          {hasActivePolling && pendingOrInProgressTasks > 0 && (
+            <div className="flex items-center gap-1 text-xs text-blue-600">
+              <Activity className="h-3 w-3 animate-pulse" />
+              <span>Auto-refreshing ({pendingOrInProgressTasks} active)</span>
+            </div>
+          )}
+        </div>
         <Button onClick={handleRefresh} variant="outline" size="sm" disabled={isLoading}>
           <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? "animate-spin" : ""}`} />
           Refresh
