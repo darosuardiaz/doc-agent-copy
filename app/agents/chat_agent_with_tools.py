@@ -3,7 +3,7 @@ Chat Agent with Tool Calling for conversational interaction with financial docum
 Uses LangChain's tool calling capabilities for retrieval-augmented generation.
 """
 import logging
-from typing import Dict, Any, List, Optional, Type, Tuple
+from typing import Dict, Any, List, Optional
 import asyncio
 from datetime import datetime
 import json
@@ -11,18 +11,12 @@ import json
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage, ToolMessage
 from langchain_core.tools import BaseTool, tool
-from langchain_core.pydantic_v1 import BaseModel as PydanticV1BaseModel, Field as V1Field
-from langchain.agents import AgentExecutor, create_openai_tools_agent
-from langchain.agents.output_parsers.openai_tools import OpenAIToolsAgentOutputParser
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolNode
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
-from app.services.embedding_service import embedding_service
 from app.tools import vector_search_tool
-from app.database.models import Document, ChatSession, ChatMessage
+from app.database.models import ChatSession, ChatMessage
 from app.database.connection import get_db_session
 from app.prompts.chat_agent import FINANCIAL_ANALYST_SYSTEM_PROMPT
 
@@ -30,10 +24,10 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
-class SearchDocumentInput(PydanticV1BaseModel):
+class SearchDocumentInput(BaseModel):
     """Input schema for document search tool."""
-    query: str = V1Field(description="The search query to find relevant information")
-    top_k: int = V1Field(default=5, description="Number of results to return")
+    query: str = Field(description="The search query to find relevant information")
+    top_k: int = Field(default=5, description="Number of results to return")
 
 
 class ChatResponse(BaseModel):
@@ -385,10 +379,9 @@ class ChatAgentWithTools:
                 formatted_sources = []
                 for source in sources_used:
                     formatted_sources.append({
-                        'chunk_id': source.get('chunk_id'),
-                        'page_number': source.get('page_number'),
-                        'similarity_score': source.get('similarity_score'),
-                        'preview': source.get('content', '')[:200] + "..." if source.get('content') else ""
+                        'page': source.get('page_number'),
+                        'relevance_score': source.get('similarity_score'),
+                        'content': source.get('content', '')[:500] + "..." if source.get('content') and len(source.get('content', '')) > 500 else source.get('content', '')
                     })
             
             tool_calls = final_state.get("tool_calls", [])
