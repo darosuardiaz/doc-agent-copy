@@ -1,9 +1,10 @@
 "use client"
 
 import { formatDistanceToNow } from "date-fns"
-import { CheckCircle, Clock, FileText, TrendingUp } from "lucide-react"
+import { CheckCircle, Clock } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { SourcesDisplay } from "@/components/ui/sources-display"
 import type { ResearchTask } from "@/lib/stores/research-store"
 import { cn } from "@/lib/utils"
 
@@ -86,29 +87,7 @@ export function ResearchResult({ task }: ResearchResultProps) {
 
 
             {/* Sources Used */}
-            {task.sources_used && task.sources_used.length > 0 && (
-              <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                  <h4 className="font-medium">Sources Used ({task.sources_used.length})</h4>
-                </div>
-                <div className="space-y-2">
-                  {task.sources_used.map((source, index) => (
-                    <div key={index} className="bg-gray-50 rounded-lg p-3">
-                      <div className="flex items-center justify-between mb-1">
-                        <Badge variant="outline" className="text-xs">
-                          Page {source.page}
-                        </Badge>
-                        <Badge variant="outline" className="text-xs">
-                          Score: {Math.round(source.relevance_score * 100)}%
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-gray-700">{source.content}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <SourcesDisplay sources={task.sources_used || []} />
 
             {/* Processing Time */}
             {task.processing_time && (

@@ -9,14 +9,12 @@ import json
 
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
-from langchain.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
-from app.services.embedding_service import embedding_service
 from app.tools import vector_search_tool
-from app.database.models import Document, ResearchTask
+from app.database.models import ResearchTask
 from app.database.connection import get_db_session
 
 settings = get_settings()
@@ -240,19 +238,27 @@ class DeepResearchAgent:
                 errors = final_state.errors
                 retrieved_chunks = final_state.retrieved_chunks
 
-            # Derive structured sources {page, chunk} from retrieved chunks (deduplicated)
+            # Deduplicate sources and format them
             seen_pairs = set()
             structured_sources = []
             for ch in retrieved_chunks or []:
                 page = ch.get('page_number')
-                chunk_idx = ch.get('chunk_index')
-                if page is None or chunk_idx is None:
+                content = ch.get('content')
+                relevance_score = ch.get('similarity_score')
+                
+                if page is None or content is None or relevance_score is None:
                     continue
-                pair = (page, chunk_idx)
+                
+                pair = (page, content[:50]) # Use a preview of content to deduplicate
                 if pair in seen_pairs:
                     continue
                 seen_pairs.add(pair)
-                structured_sources.append({"page": page, "chunk": chunk_idx})
+                
+                structured_sources.append({
+                    "page": page, 
+                    "content": content,
+                    "relevance_score": relevance_score
+                })
             
             # Update database with results
             await self._update_research_task(
