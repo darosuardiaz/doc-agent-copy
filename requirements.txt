@@ -8,8 +8,10 @@ langsmith
 
 # Document processing
 docling
+docling-core
 pypdf2
 pymupdf
+torch
 
 # Vector store and embeddings
 pinecone

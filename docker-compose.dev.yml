@@ -1,0 +1,52 @@
+version: '3.8'
+
+# Development override file for docker-compose
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  # Development backend with hot reload
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      target: development
+    environment:
+      - DEBUG=true
+      - LANGSMITH_TRACING=true
+    volumes:
+      - ./app:/app/app
+      - ./tests:/app/tests
+      - ./uploads:/app/uploads
+      - ./requirements.txt:/app/requirements.txt
+    command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    ports:
+      - "8000:8000"
+
+  # Development frontend with hot reload
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile.dev
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+      - /app/.next
+    command: ["pnpm", "dev"]
+    ports:
+      - "3000:3000"
+
+  # PostgreSQL with development settings
+  postgres:
+    environment:
+      - POSTGRES_HOST_AUTH_METHOD=trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_dev_data:
+    driver: local

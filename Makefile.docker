@@ -1,0 +1,123 @@
+# Docker-based Makefile for AI Financial Document Processing System
+
+.PHONY: help build start dev stop clean logs status health backup restore
+
+# Default target
+help: ## Show this help message
+	@echo "AI Financial Document Processing System - Docker Commands"
+	@echo ""
+	@echo "Usage: make [target]"
+	@echo ""
+	@echo "Targets:"
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+# Environment setup
+.env:
+	@if [ ! -f .env ]; then \
+		echo "Creating .env from template..."; \
+		cp .env.example .env; \
+		echo "Please edit .env file with your API keys"; \
+	fi
+
+# Docker operations
+build: ## Build all Docker images
+	@echo "Building Docker images..."
+	docker-compose build --no-cache
+
+start: .env ## Start services in production mode
+	@echo "Starting services in production mode..."
+	docker-compose up -d
+	@echo "Services started!"
+	@echo "Frontend: http://localhost:3000"
+	@echo "Backend API: http://localhost:8000"
+	@echo "API Docs: http://localhost:8000/docs"
+
+dev: .env ## Start services in development mode with hot reload
+	@echo "Starting services in development mode..."
+	docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+	@echo "Development services started!"
+	@echo "Frontend: http://localhost:3000 (with hot reload)"
+	@echo "Backend API: http://localhost:8000 (with hot reload)"
+
+stop: ## Stop all services
+	@echo "Stopping all services..."
+	docker-compose down
+
+clean: ## Stop services and remove volumes (WARNING: removes all data)
+	@echo "WARNING: This will remove all data!"
+	@read -p "Are you sure? (y/N): " REPLY; \
+	if [ "$$REPLY" = "y" ] || [ "$$REPLY" = "Y" ]; then \
+		docker-compose down -v; \
+		docker system prune -f; \
+		echo "Cleanup completed!"; \
+	else \
+		echo "Cleanup cancelled."; \
+	fi
+
+logs: ## Show logs for all services
+	docker-compose logs -f
+
+logs-backend: ## Show backend logs
+	docker-compose logs -f backend
+
+logs-frontend: ## Show frontend logs
+	docker-compose logs -f frontend
+
+logs-db: ## Show database logs
+	docker-compose logs -f postgres
+
+status: ## Show service status and resource usage
+	@echo "Service status:"
+	docker-compose ps
+	@echo ""
+	@echo "Resource usage:"
+	docker stats --no-stream
+
+health: ## Check health of all services
+	@echo "Checking service health..."
+	@curl -f -s http://localhost:8000/health > /dev/null && echo "✓ Backend API: Healthy" || echo "✗ Backend API: Unhealthy"
+	@curl -f -s http://localhost:3000 > /dev/null && echo "✓ Frontend: Healthy" || echo "✗ Frontend: Unhealthy"
+	@docker-compose exec -T postgres pg_isready -U doc_agent > /dev/null 2>&1 && echo "✓ Database: Healthy" || echo "✗ Database: Unhealthy"
+
+# Database operations
+backup: ## Create database backup
+	@echo "Creating database backup..."
+	@BACKUP_FILE=backup_$$(date +%Y%m%d_%H%M%S).sql; \
+	docker-compose exec -T postgres pg_dump -U doc_agent financial_docs > $$BACKUP_FILE; \
+	echo "Database backup created: $$BACKUP_FILE"
+
+restore: ## Restore database from backup (usage: make restore FILE=backup.sql)
+	@if [ -z "$(FILE)" ]; then \
+		echo "Please specify backup file: make restore FILE=backup.sql"; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(FILE)" ]; then \
+		echo "Backup file not found: $(FILE)"; \
+		exit 1; \
+	fi
+	@echo "Restoring database from: $(FILE)"
+	@read -p "Are you sure? (y/N): " REPLY; \
+	if [ "$$REPLY" = "y" ] || [ "$$REPLY" = "Y" ]; then \
+		docker-compose exec -T postgres psql -U doc_agent financial_docs < $(FILE); \
+		echo "Database restored successfully!"; \
+	else \
+		echo "Restore cancelled."; \
+	fi
+
+# Development helpers
+shell-backend: ## Open shell in backend container
+	docker-compose exec backend bash
+
+shell-frontend: ## Open shell in frontend container
+	docker-compose exec frontend sh
+
+shell-db: ## Open database shell
+	docker-compose exec postgres psql -U doc_agent financial_docs
+
+# Quick development workflow
+quick-start: build dev ## Build and start in development mode
+	@echo "Quick start completed!"
+
+restart: stop start ## Restart services
+
+restart-dev: stop dev ## Restart in development mode
