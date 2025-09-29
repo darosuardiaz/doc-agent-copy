@@ -95,19 +95,11 @@ Return results as a valid JSON object:
 If information is not found or unclear, use appropriate empty values (empty lists, null values).
 """
 
-INVESTMENT_DATA_USER_TEMPLATE = "Extract investment data from this document:\n\n{text}..."
-
-FINANCIAL_FACTS_USER_TEMPLATE = """
-Extract financial facts from document.
-
---- START OF DOCUMENT TEXT ---
-{text}
---- END OF DOCUMENT TEXT ---
-"""
 
 DOCUMENT_SUMMARY_SYSTEM_PROMPT = """
 Create a concise summary of this financial document in {max_length} words or less.
 Focus on the key business information, financial highlights, and main value propositions.
 Make it suitable for executive review.
 """
+
 DOCUMENT_SUMMARY_USER_TEMPLATE = "Summarize this document:\n\n{text}..."
